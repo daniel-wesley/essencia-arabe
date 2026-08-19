@@ -10,13 +10,13 @@ function getTokenFromRequest(request: Request): string | null {
 export async function GET(request: Request) {
   const token = getTokenFromRequest(request);
   if (!token) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-  const session = validateSession(token);
+  const session = await validateSession(token);
   if (!session || !['admin', 'editor'].includes(session.role)) {
     return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
   }
 
   try {
-    const stats = getDashboardStats();
+    const stats = await getDashboardStats();
     return NextResponse.json(stats);
   } catch (err) {
     console.error('GET /api/dashboard error:', err);

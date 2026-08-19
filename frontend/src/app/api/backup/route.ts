@@ -10,13 +10,13 @@ function getTokenFromRequest(request: Request): string | null {
 export async function GET(request: Request) {
   const token = getTokenFromRequest(request);
   if (!token) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-  const session = validateSession(token);
+  const session = await validateSession(token);
   if (!session || session.role !== 'admin') {
     return NextResponse.json({ error: 'Apenas administradores.' }, { status: 403 });
   }
 
   try {
-    const info = getBackupInfo();
+    const info = await getBackupInfo();
     return NextResponse.json(info);
   } catch (err) {
     console.error('GET /api/backup error:', err);
@@ -27,13 +27,13 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const token = getTokenFromRequest(request);
   if (!token) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-  const session = validateSession(token);
+  const session = await validateSession(token);
   if (!session || session.role !== 'admin') {
     return NextResponse.json({ error: 'Apenas administradores.' }, { status: 403 });
   }
 
   try {
-    const path = createBackup();
+    const path = await createBackup();
     return NextResponse.json({ success: true, path });
   } catch (err) {
     console.error('POST /api/backup error:', err);

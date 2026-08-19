@@ -1,169 +1,19 @@
-// @ts-ignore
-import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, existsSync, copyFileSync } from 'node:fs';
-import path from 'node:path';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import crypto from 'node:crypto';
 
-// ─── Database Setup ──────────────────────────────────────────────────────────
-const dataDir = path.join(process.cwd(), 'data');
-mkdirSync(dataDir, { recursive: true });
+// ─── Supabase Client ─────────────────────────────────────────────────────────
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://akcvmvxjkdtarpowmoim.supabase.co';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrY3Ztdnhqa2R0YXJwb3dtb2ltIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NzE2MDk0MCwiZXhwIjoyMTAyNzM2OTQwfQ.2Ywehw39XMp9V0lchNm1Ajzk8tjYLfGhb8rC8flOmi0';
 
-const backupDir = path.join(dataDir, 'backups');
-mkdirSync(backupDir, { recursive: true });
+export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { persistSession: false },
+});
 
-const dbPath = path.join(dataDir, 'janilly.db');
-const db = new DatabaseSync(dbPath);
-
-db.exec('PRAGMA journal_mode = WAL');
-db.exec('PRAGMA foreign_keys = ON');
-
-// ─── Schema ──────────────────────────────────────────────────────────────────
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    username TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'viewer' CHECK(role IN ('admin','editor','viewer')),
-    active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS sessions (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    token_hash TEXT NOT NULL UNIQUE,
-    expires_at TEXT NOT NULL,
-    created_at TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS brands (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
-    slug TEXT NOT NULL UNIQUE,
-    logo_url TEXT,
-    country TEXT,
-    description TEXT,
-    active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS categories (
-    id TEXT PRIMARY KEY,
-    parent_id TEXT,
-    name TEXT NOT NULL,
-    slug TEXT NOT NULL UNIQUE,
-    description TEXT,
-    image_url TEXT,
-    sort_order INTEGER DEFAULT 0,
-    active INTEGER NOT NULL DEFAULT 1,
-    FOREIGN KEY (parent_id) REFERENCES categories(id) ON DELETE SET NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS products (
-    id TEXT PRIMARY KEY,
-    brand_id TEXT,
-    category_id TEXT,
-    name TEXT NOT NULL,
-    slug TEXT NOT NULL UNIQUE,
-    sku TEXT,
-    barcode TEXT,
-    description TEXT,
-    short_description TEXT,
-    family TEXT,
-    concentration TEXT,
-    gender TEXT,
-    country TEXT,
-    occasion TEXT,
-    longevity TEXT,
-    projection TEXT,
-    featured INTEGER NOT NULL DEFAULT 0,
-    active INTEGER NOT NULL DEFAULT 1,
-    promotional_price REAL,
-    promotion_start TEXT,
-    promotion_end TEXT,
-    view_count INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE SET NULL,
-    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS product_variants (
-    id TEXT PRIMARY KEY,
-    product_id TEXT NOT NULL,
-    size_ml INTEGER NOT NULL,
-    price REAL NOT NULL DEFAULT 0,
-    promotional_price REAL,
-    stock INTEGER NOT NULL DEFAULT 0,
-    sku TEXT,
-    barcode TEXT,
-    active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS product_images (
-    id TEXT PRIMARY KEY,
-    product_id TEXT NOT NULL,
-    url TEXT NOT NULL,
-    sort_order INTEGER DEFAULT 0,
-    is_main INTEGER DEFAULT 0,
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS product_notes (
-    id TEXT PRIMARY KEY,
-    product_id TEXT NOT NULL,
-    type TEXT NOT NULL CHECK(type IN ('top','heart','base')),
-    name TEXT NOT NULL,
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS product_views (
-    id TEXT PRIMARY KEY,
-    product_id TEXT NOT NULL,
-    viewed_at TEXT DEFAULT (datetime('now')),
-    ip TEXT,
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS audit_logs (
-    id TEXT PRIMARY KEY,
-    user_id TEXT,
-    username TEXT,
-    action TEXT NOT NULL,
-    resource TEXT NOT NULL,
-    resource_id TEXT,
-    details TEXT,
-    ip TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS login_attempts (
-    id TEXT PRIMARY KEY,
-    username TEXT NOT NULL,
-    ip TEXT,
-    success INTEGER NOT NULL DEFAULT 0,
-    attempted_at TEXT DEFAULT (datetime('now'))
-  );
-`);
-
-// ─── Idempotent Migrations (legacy support) ──────────────────────────────────
-function addColumnIfMissing(table: string, column: string, type: string) {
-  try {
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
-  } catch {
-    // column already exists
-  }
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function slugify(text: string): string {
+  return text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
 
-addColumnIfMissing('products', 'images', 'TEXT');
-addColumnIfMissing('products', 'notes', 'TEXT');
-addColumnIfMissing('products', 'variants', 'TEXT');
-
-// ─── Password Hashing (bcrypt-like via crypto) ───────────────────────────────
 function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.scryptSync(password, salt, 64).toString('hex');
@@ -178,203 +28,196 @@ function verifyPassword(password: string, stored: string): boolean {
 }
 
 // ─── Session Management ──────────────────────────────────────────────────────
-export function createSession(userId: string, ip?: string): string {
-  const id = crypto.randomUUID();
+export async function createSession(userId: string, ip?: string): Promise<string> {
   const token = crypto.randomBytes(32).toString('hex');
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-  db.prepare(
-    'INSERT INTO sessions (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)'
-  ).run(id, userId, tokenHash, expiresAt);
+  const { error } = await supabase.from('sessions').insert({
+    user_id: userId, token_hash: tokenHash, expires_at: expiresAt,
+  });
+  if (error) throw new Error(error.message);
 
-  logAudit(userId, 'LOGIN', 'session', id, ip);
+  await logAudit(userId, 'LOGIN', 'session', undefined, ip);
   return token;
 }
 
-export function validateSession(token: string): { id: string; username: string; role: string } | null {
+export async function validateSession(token: string): Promise<{ id: string; username: string; role: string } | null> {
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-  const row = db.prepare(`
-    SELECT s.id, u.id as user_id, u.username, u.role
-    FROM sessions s
-    JOIN users u ON u.id = s.user_id
-    WHERE s.token_hash = ? AND s.expires_at > datetime('now') AND u.active = 1
-  `).get(tokenHash) as { id: string; user_id: string; username: string; role: string } | undefined;
-  return row ? { id: row.user_id, username: row.username, role: row.role } : null;
+  const { data } = await supabase
+    .from('sessions')
+    .select('id, user_id, users!inner(id, username, role, active)')
+    .eq('token_hash', tokenHash)
+    .gt('expires_at', new Date().toISOString())
+    .single();
+
+  if (!data || !data.users || (data.users as any).active !== 1) return null;
+  const u = data.users as any;
+  return { id: u.id, username: u.username, role: u.role };
 }
 
-export function destroySession(token: string): void {
+export async function destroySession(token: string): Promise<void> {
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-  db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash);
+  await supabase.from('sessions').delete().eq('token_hash', tokenHash);
 }
 
 // ─── Rate Limiting ────────────────────────────────────────────────────────────
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
 
-export function checkRateLimit(username: string, ip?: string): { allowed: boolean; remaining: number } {
+export async function checkRateLimit(username: string): Promise<{ allowed: boolean; remaining: number }> {
   const windowStart = new Date(Date.now() - LOCKOUT_MINUTES * 60 * 1000).toISOString();
-  const attempts = db.prepare(`
-    SELECT COUNT(*) as cnt FROM login_attempts
-    WHERE username = ? AND attempted_at > ? AND success = 0
-  `).get(username, windowStart) as { cnt: number };
+  const { count } = await supabase
+    .from('login_attempts')
+    .select('*', { count: 'exact', head: true })
+    .eq('username', username)
+    .gt('attempted_at', windowStart)
+    .eq('success', false);
 
-  const failed = attempts?.cnt ?? 0;
-  return {
-    allowed: failed < MAX_ATTEMPTS,
-    remaining: Math.max(0, MAX_ATTEMPTS - failed),
-  };
+  const failed = count ?? 0;
+  return { allowed: failed < MAX_ATTEMPTS, remaining: Math.max(0, MAX_ATTEMPTS - failed) };
 }
 
-export function recordLoginAttempt(username: string, success: boolean, ip?: string) {
-  db.prepare(
-    'INSERT INTO login_attempts (id, username, ip, success) VALUES (?, ?, ?, ?)'
-  ).run(crypto.randomUUID(), username, ip ?? null, success ? 1 : 0);
+export async function recordLoginAttempt(username: string, success: boolean, ip?: string): Promise<void> {
+  await supabase.from('login_attempts').insert({
+    username, ip: ip ?? null, success: success ? 1 : 0,
+  });
 }
 
 // ─── Audit Log ────────────────────────────────────────────────────────────────
-export function logAudit(
+export async function logAudit(
   userId: string | null,
   action: string,
   resource: string,
   resourceId?: string,
   ip?: string,
   details?: string,
-) {
-  db.prepare(
-    'INSERT INTO audit_logs (id, user_id, username, action, resource, resource_id, details, ip) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(
-    crypto.randomUUID(),
-    userId,
-    null,
-    action,
-    resource,
-    resourceId ?? null,
-    details ?? null,
-    ip ?? null,
-  );
+): Promise<void> {
+  await supabase.from('audit_logs').insert({
+    user_id: userId, username: null, action, resource,
+    resource_id: resourceId ?? null, details: details ?? null, ip: ip ?? null,
+  });
 }
 
-export function getAuditLogs(limit = 50) {
-  return db.prepare('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ?').all(limit);
+export async function getAuditLogs(limit = 50) {
+  const { data } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(limit);
+  return data ?? [];
 }
 
 // ─── Users ────────────────────────────────────────────────────────────────────
-export function createUser(username: string, password: string, role: string = 'viewer') {
+export async function createUser(username: string, password: string, role: string = 'viewer') {
   const id = crypto.randomUUID();
   const passwordHash = hashPassword(password);
-  db.prepare(
-    'INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)'
-  ).run(id, username, passwordHash, role);
-  return { id, username, role };
+  const { data, error } = await supabase.from('users').insert({
+    id, username, password_hash: passwordHash, role,
+  }).select('id, username, role').single();
+  if (error) throw new Error(error.message);
+  return data;
 }
 
-export function authenticateUser(username: string, password: string) {
-  const row = db.prepare(
-    'SELECT id, username, password_hash, role FROM users WHERE username = ? AND active = 1'
-  ).get(username) as { id: string; username: string; password_hash: string; role: string } | undefined;
+export async function authenticateUser(username: string, password: string) {
+  const { data } = await supabase
+    .from('users')
+    .select('id, username, password_hash, role')
+    .eq('username', username)
+    .eq('active', 1)
+    .single();
 
-  if (!row) return null;
-  if (!verifyPassword(password, row.password_hash)) return null;
-  return { id: row.id, username: row.username, role: row.role };
+  if (!data) return null;
+  if (!verifyPassword(password, data.password_hash)) return null;
+  return { id: data.id, username: data.username, role: data.role };
 }
 
-export function getUserById(id: string) {
-  return db.prepare('SELECT id, username, role, active FROM users WHERE id = ?').get(id) as
-    | { id: string; username: string; role: string; active: number }
-    | undefined;
+export async function getUserById(id: string) {
+  const { data } = await supabase.from('users').select('id, username, role, active').eq('id', id).single();
+  return data ?? undefined;
 }
 
-export function listUsers() {
-  return db.prepare('SELECT id, username, role, active, created_at FROM users ORDER BY created_at DESC').all();
+export async function listUsers() {
+  const { data } = await supabase.from('users').select('id, username, role, active, created_at').order('created_at', { ascending: false });
+  return data ?? [];
 }
 
-export function updateUserRole(id: string, role: string) {
-  db.prepare('UPDATE users SET role = ?, updated_at = datetime(\'now\') WHERE id = ?').run(role, id);
+export async function updateUserRole(id: string, role: string) {
+  await supabase.from('users').update({ role, updated_at: new Date().toISOString() }).eq('id', id);
 }
 
-export function updateUserActive(id: string, active: boolean) {
-  db.prepare('UPDATE users SET active = ?, updated_at = datetime(\'now\') WHERE id = ?').run(active ? 1 : 0, id);
+export async function updateUserActive(id: string, active: boolean) {
+  await supabase.from('users').update({ active: active ? 1 : 0, updated_at: new Date().toISOString() }).eq('id', id);
 }
 
 // ─── Brands ───────────────────────────────────────────────────────────────────
-export function createBrand(data: { name: string; slug?: string; country?: string; description?: string; logoUrl?: string }) {
-  const id = crypto.randomUUID();
+export async function createBrand(data: { name: string; slug?: string; country?: string; description?: string; logoUrl?: string }) {
   const slug = data.slug || slugify(data.name);
-  db.prepare(
-    'INSERT INTO brands (id, name, slug, country, description, logo_url) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(id, data.name, slug, data.country ?? null, data.description ?? null, data.logoUrl ?? null);
+  const { data: result, error } = await supabase.from('brands').insert({
+    name: data.name, slug, country: data.country ?? null,
+    description: data.description ?? null, logo_url: data.logoUrl ?? null,
+  }).select('*').single();
+  if (error) throw new Error(error.message);
+  return result;
+}
+
+export async function getBrand(id: string) {
+  const { data } = await supabase.from('brands').select('*').eq('id', id).single();
+  return data ?? undefined;
+}
+
+export async function listBrands() {
+  const { data } = await supabase.from('brands').select('*').eq('active', 1).order('name');
+  return data ?? [];
+}
+
+export async function updateBrand(id: string, data: { name?: string; country?: string; description?: string; logoUrl?: string }) {
+  const update: Record<string, unknown> = {};
+  if (data.name !== undefined) update.name = data.name;
+  if (data.country !== undefined) update.country = data.country;
+  if (data.description !== undefined) update.description = data.description;
+  if (data.logoUrl !== undefined) update.logo_url = data.logoUrl;
+  if (Object.keys(update).length === 0) return getBrand(id);
+  await supabase.from('brands').update(update).eq('id', id);
   return getBrand(id);
 }
 
-export function getBrand(id: string) {
-  return db.prepare('SELECT * FROM brands WHERE id = ?').get(id);
-}
-
-export function listBrands() {
-  return db.prepare('SELECT * FROM brands WHERE active = 1 ORDER BY name').all();
-}
-
-export function updateBrand(id: string, data: { name?: string; country?: string; description?: string; logoUrl?: string }) {
-  const fields: string[] = [];
-  const values: unknown[] = [];
-  if (data.name !== undefined) { fields.push('name = ?'); values.push(data.name); }
-  if (data.country !== undefined) { fields.push('country = ?'); values.push(data.country); }
-  if (data.description !== undefined) { fields.push('description = ?'); values.push(data.description); }
-  if (data.logoUrl !== undefined) { fields.push('logo_url = ?'); values.push(data.logoUrl); }
-  if (fields.length === 0) return getBrand(id);
-  values.push(id);
-  db.prepare(`UPDATE brands SET ${fields.join(', ')} WHERE id = ?`).run(...values);
-  return getBrand(id);
-}
-
-export function deleteBrand(id: string) {
-  return db.prepare('UPDATE brands SET active = 0 WHERE id = ?').run(id).changes > 0;
+export async function deleteBrand(id: string) {
+  const { error } = await supabase.from('brands').update({ active: 0 }).eq('id', id);
+  return !error;
 }
 
 // ─── Categories ───────────────────────────────────────────────────────────────
-export function createCategory(data: { name: string; slug?: string; parentId?: string; description?: string }) {
-  const id = crypto.randomUUID();
+export async function createCategory(data: { name: string; slug?: string; parentId?: string; description?: string }) {
   const slug = data.slug || slugify(data.name);
-  db.prepare(
-    'INSERT INTO categories (id, name, slug, parent_id, description) VALUES (?, ?, ?, ?, ?)'
-  ).run(id, data.name, slug, data.parentId ?? null, data.description ?? null);
+  const { data: result, error } = await supabase.from('categories').insert({
+    name: data.name, slug, parent_id: data.parentId ?? null, description: data.description ?? null,
+  }).select('*').single();
+  if (error) throw new Error(error.message);
+  return result;
+}
+
+export async function getCategory(id: string) {
+  const { data } = await supabase.from('categories').select('*').eq('id', id).single();
+  return data ?? undefined;
+}
+
+export async function listCategories() {
+  const { data } = await supabase.from('categories').select('*').eq('active', 1).order('sort_order').order('name');
+  return data ?? [];
+}
+
+export async function updateCategory(id: string, data: { name?: string; description?: string }) {
+  const update: Record<string, unknown> = {};
+  if (data.name !== undefined) update.name = data.name;
+  if (data.description !== undefined) update.description = data.description;
+  if (Object.keys(update).length === 0) return getCategory(id);
+  await supabase.from('categories').update(update).eq('id', id);
   return getCategory(id);
 }
 
-export function getCategory(id: string) {
-  return db.prepare('SELECT * FROM categories WHERE id = ?').get(id);
-}
-
-export function listCategories() {
-  return db.prepare('SELECT * FROM categories WHERE active = 1 ORDER BY sort_order, name').all();
-}
-
-export function updateCategory(id: string, data: { name?: string; description?: string }) {
-  const fields: string[] = [];
-  const values: unknown[] = [];
-  if (data.name !== undefined) { fields.push('name = ?'); values.push(data.name); }
-  if (data.description !== undefined) { fields.push('description = ?'); values.push(data.description); }
-  if (fields.length === 0) return getCategory(id);
-  values.push(id);
-  db.prepare(`UPDATE categories SET ${fields.join(', ')} WHERE id = ?`).run(...values);
-  return getCategory(id);
-}
-
-export function deleteCategory(id: string) {
-  return db.prepare('UPDATE categories SET active = 0 WHERE id = ?').run(id).changes > 0;
+export async function deleteCategory(id: string) {
+  const { error } = await supabase.from('categories').update({ active: 0 }).eq('id', id);
+  return !error;
 }
 
 // ─── Products ─────────────────────────────────────────────────────────────────
-export function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '');
-}
-
 export interface ProductInput {
   name: string;
   brandId?: string;
@@ -397,108 +240,6 @@ export interface ProductInput {
   variants?: { sizeMl: number; price: number; promotionalPrice?: number; stock: number; sku?: string }[];
   images?: { url: string; isMain?: boolean }[];
   notes?: { type: 'top' | 'heart' | 'base'; name: string }[];
-}
-
-export function createProduct(data: ProductInput) {
-  const id = crypto.randomUUID();
-  const slug = slugify(data.name);
-
-  db.prepare(`
-    INSERT INTO products (
-      id, brand_id, category_id, name, slug, sku, barcode,
-      description, short_description, family, concentration, gender,
-      country, occasion, longevity, projection, featured,
-      promotional_price, promotion_start, promotion_end
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id,
-    data.brandId ?? null,
-    data.categoryId ?? null,
-    data.name,
-    slug,
-    data.sku ?? null,
-    data.barcode ?? null,
-    data.description ?? null,
-    data.shortDescription ?? null,
-    data.family ?? null,
-    data.concentration ?? null,
-    data.gender ?? null,
-    data.country ?? null,
-    data.occasion ?? null,
-    data.longevity ?? null,
-    data.projection ?? null,
-    data.featured ? 1 : 0,
-    data.promotionalPrice ?? null,
-    data.promotionStart ?? null,
-    data.promotionEnd ?? null,
-  );
-
-  // Insert variants
-  if (data.variants && data.variants.length > 0) {
-    for (const v of data.variants) {
-      db.prepare(
-        'INSERT INTO product_variants (id, product_id, size_ml, price, promotional_price, stock, sku) VALUES (?, ?, ?, ?, ?, ?, ?)'
-      ).run(crypto.randomUUID(), id, v.sizeMl, v.price, v.promotionalPrice ?? null, v.stock, v.sku ?? null);
-    }
-  } else {
-    // Default variant
-    db.prepare(
-      'INSERT INTO product_variants (id, product_id, size_ml, price, stock) VALUES (?, ?, 50, 0, 0)'
-    ).run(crypto.randomUUID(), id);
-  }
-
-  // Insert images
-  if (data.images && data.images.length > 0) {
-    data.images.forEach((img, i) => {
-      db.prepare(
-        'INSERT INTO product_images (id, product_id, url, sort_order, is_main) VALUES (?, ?, ?, ?, ?)'
-      ).run(crypto.randomUUID(), id, img.url, i, img.isMain ? 1 : i === 0 ? 1 : 0);
-    });
-  }
-
-  // Insert notes
-  if (data.notes && data.notes.length > 0) {
-    for (const n of data.notes) {
-      db.prepare(
-        'INSERT INTO product_notes (id, product_id, type, name) VALUES (?, ?, ?, ?)'
-      ).run(crypto.randomUUID(), id, n.type, n.name);
-    }
-  }
-
-  logAudit(null, 'CREATE', 'product', id);
-  return getProduct(id);
-}
-
-interface RawProductRow {
-  id: string;
-  name: string;
-  slug: string;
-  brand_id: string | null;
-  category_id: string | null;
-  sku: string | null;
-  barcode: string | null;
-  description: string | null;
-  short_description: string | null;
-  family: string | null;
-  concentration: string | null;
-  gender: string | null;
-  country: string | null;
-  occasion: string | null;
-  longevity: string | null;
-  projection: string | null;
-  featured: number;
-  active: number;
-  promotional_price: number | null;
-  promotion_start: string | null;
-  promotion_end: string | null;
-  view_count: number;
-  created_at: string;
-  updated_at: string;
-  brand_name: string | null;
-  brand_slug: string | null;
-  brand_logo: string | null;
-  category_name: string | null;
-  category_slug: string | null;
 }
 
 export interface ProductResponse {
@@ -539,78 +280,68 @@ export interface ProductResponse {
   notes: { top: string[]; heart: string[]; base: string[] };
 }
 
-export function getProduct(idOrSlug: string): ProductResponse | undefined {
-  const row = db.prepare(`
-    SELECT p.*,
-      b.name as brand_name, b.slug as brand_slug, b.logo_url as brand_logo,
-      c.name as category_name, c.slug as category_slug
-    FROM products p
-    LEFT JOIN brands b ON b.id = p.brand_id
-    LEFT JOIN categories c ON c.id = p.category_id
-    WHERE p.id = ? OR p.slug = ?
-  `).get(idOrSlug, idOrSlug) as RawProductRow | undefined;
+async function buildProductResponse(p: any): Promise<ProductResponse> {
+  const { data: variants } = await supabase.from('product_variants').select('*').eq('product_id', p.id).eq('active', 1).order('size_ml');
+  const { data: images } = await supabase.from('product_images').select('*').eq('product_id', p.id).order('sort_order');
+  const { data: notes } = await supabase.from('product_notes').select('*').eq('product_id', p.id);
 
-  if (!row) return undefined;
+  const vars = variants ?? [];
+  const imgs = images ?? [];
+  const noteRows = notes ?? [];
 
-  const variants = db.prepare(
-    'SELECT * FROM product_variants WHERE product_id = ? AND active = 1 ORDER BY size_ml'
-  ).all(row.id) as { id: string; size_ml: number; price: number; promotional_price: number | null; stock: number; sku: string | null }[];
+  const totalStock = vars.reduce((sum: number, v: any) => sum + (v.stock ?? 0), 0);
+  const minPrice = vars.length > 0 ? Math.min(...vars.map((v: any) => v.price)) : 0;
 
-  const images = db.prepare(
-    'SELECT * FROM product_images WHERE product_id = ? ORDER BY sort_order'
-  ).all(row.id) as { id: string; url: string; sort_order: number; is_main: number }[];
-
-  const notes = db.prepare(
-    'SELECT * FROM product_notes WHERE product_id = ?'
-  ).all(row.id) as { type: string; name: string }[];
-
-  const totalStock = variants.reduce((sum, v) => sum + v.stock, 0);
-  const minPrice = variants.length > 0 ? Math.min(...variants.map(v => v.price)) : 0;
+  const grouped: { top: string[]; heart: string[]; base: string[] } = { top: [], heart: [], base: [] };
+  for (const n of noteRows) {
+    if (n.type in grouped) grouped[n.type as keyof typeof grouped].push(n.name);
+  }
 
   return {
-    id: row.id,
-    name: row.name,
-    slug: row.slug,
-    brandId: row.brand_id,
-    categoryId: row.category_id,
-    sku: row.sku,
-    barcode: row.barcode,
-    description: row.description,
-    shortDescription: row.short_description,
-    family: row.family,
-    concentration: row.concentration,
-    gender: row.gender,
-    country: row.country,
-    occasion: row.occasion,
-    longevity: row.longevity,
-    projection: row.projection,
-    featured: row.featured,
-    active: row.active,
-    promotionalPrice: row.promotional_price,
-    promotionStart: row.promotion_start,
-    promotionEnd: row.promotion_end,
-    viewCount: row.view_count,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    brand: row.brand_name,
-    brandSlug: row.brand_slug,
-    brandLogo: row.brand_logo,
-    category: row.category_name,
-    categorySlug: row.category_slug,
-    price: minPrice,
-    stock: totalStock,
-    variants: variants.map(v => ({
-      id: v.id,
-      sizeMl: v.size_ml,
-      price: v.price,
-      promotionalPrice: v.promotional_price,
-      stock: v.stock,
-      sku: v.sku,
-    })),
-    images: images.map(i => i.url),
-    imageObjects: images.map(i => ({ id: i.id, url: i.url, isMain: !!i.is_main })),
-    notes: groupNotes(notes),
+    id: p.id, name: p.name, slug: p.slug,
+    brandId: p.brand_id, categoryId: p.category_id,
+    sku: p.sku, barcode: p.barcode,
+    description: p.description, shortDescription: p.short_description,
+    family: p.family, concentration: p.concentration, gender: p.gender,
+    country: p.country, occasion: p.occasion, longevity: p.longevity, projection: p.projection,
+    featured: p.featured, active: p.active,
+    promotionalPrice: p.promotional_price, promotionStart: p.promotion_start, promotionEnd: p.promotion_end,
+    viewCount: p.view_count, created_at: p.created_at, updated_at: p.updated_at,
+    brand: p.brand_name ?? null, brandSlug: p.brand_slug ?? null, brandLogo: p.brand_logo ?? null,
+    category: p.category_name ?? null, categorySlug: p.category_slug ?? null,
+    price: minPrice, stock: totalStock,
+    variants: vars.map((v: any) => ({ id: v.id, sizeMl: v.size_ml, price: v.price, promotionalPrice: v.promotional_price, stock: v.stock, sku: v.sku })),
+    images: imgs.map((i: any) => i.url),
+    imageObjects: imgs.map((i: any) => ({ id: i.id, url: i.url, isMain: !!i.is_main })),
+    notes: grouped,
   };
+}
+
+export async function getProduct(idOrSlug: string): Promise<ProductResponse | undefined> {
+  const { data: p } = await supabase
+    .from('products')
+    .select('*')
+    .or(`id.eq.${idOrSlug},slug.eq.${idOrSlug}`)
+    .single();
+
+  if (!p) return undefined;
+
+  const { data: brand } = p.brand_id
+    ? await supabase.from('brands').select('name, slug, logo_url').eq('id', p.brand_id).single()
+    : { data: null };
+  const { data: cat } = p.category_id
+    ? await supabase.from('categories').select('name, slug').eq('id', p.category_id).single()
+    : { data: null };
+
+  const enriched: any = {
+    ...p,
+    brand_name: brand?.name ?? null,
+    brand_slug: brand?.slug ?? null,
+    brand_logo: brand?.logo_url ?? null,
+    category_name: cat?.name ?? null,
+    category_slug: cat?.slug ?? null,
+  };
+  return buildProductResponse(enriched);
 }
 
 function groupNotes(notes: { type: string; name: string }[]) {
@@ -621,256 +352,250 @@ function groupNotes(notes: { type: string; name: string }[]) {
   return grouped;
 }
 
-export function listProducts(options?: { featuredOnly?: boolean; categoryId?: string; brandId?: string }) {
-  let query = `
-    SELECT p.*,
-      b.name as brand_name, b.slug as brand_slug,
-      c.name as category_name, c.slug as category_slug
-    FROM products p
-    LEFT JOIN brands b ON b.id = p.brand_id
-    LEFT JOIN categories c ON c.id = p.category_id
-    WHERE p.active = 1
-  `;
-  const params: unknown[] = [];
+export async function listProducts(options?: { featuredOnly?: boolean; categoryId?: string; brandId?: string }) {
+  let query = supabase.from('products').select('*').eq('active', 1);
 
-  if (options?.featuredOnly) {
-    query += ' AND p.featured = 1';
-  }
-  if (options?.categoryId) {
-    query += ' AND p.category_id = ?';
-    params.push(options.categoryId);
-  }
-  if (options?.brandId) {
-    query += ' AND p.brand_id = ?';
-    params.push(options.brandId);
-  }
+  if (options?.featuredOnly) query = query.eq('featured', 1);
+  if (options?.categoryId) query = query.eq('category_id', options.categoryId);
+  if (options?.brandId) query = query.eq('brand_id', options.brandId);
 
-  query += ' ORDER BY p.created_at DESC';
+  query = query.order('created_at', { ascending: false });
+  const { data: rows } = await query;
+  if (!rows) return [];
 
-  const rows = db.prepare(query).all(...params) as RawProductRow[];
+  const results: any[] = [];
+  for (const row of rows) {
+    const { data: brand } = row.brand_id ? await supabase.from('brands').select('name, slug').eq('id', row.brand_id).single() : { data: null };
+    const { data: cat } = row.category_id ? await supabase.from('categories').select('name, slug').eq('id', row.category_id).single() : { data: null };
+    const { data: variants } = await supabase.from('product_variants').select('*').eq('product_id', row.id).eq('active', 1).order('size_ml');
+    const { data: images } = await supabase.from('product_images').select('url').eq('product_id', row.id).order('sort_order');
 
-  return rows.map(row => {
-    const variants = db.prepare(
-      'SELECT * FROM product_variants WHERE product_id = ? AND active = 1 ORDER BY size_ml'
-    ).all(row.id) as { price: number; promotional_price: number | null; stock: number; size_ml: number }[];
-
-    const images = db.prepare(
-      'SELECT url FROM product_images WHERE product_id = ? ORDER BY sort_order'
-    ).all(row.id) as { url: string }[];
-
-    const totalStock = variants.reduce((sum, v) => sum + v.stock, 0);
-    const minPrice = variants.length > 0 ? Math.min(...variants.map(v => v.price)) : 0;
-    const minPromo = variants.length > 0
-      ? Math.min(...variants.filter(v => v.promotional_price != null).map(v => v.promotional_price!))
+    const vars = variants ?? [];
+    const totalStock = vars.reduce((sum: number, v: any) => sum + (v.stock ?? 0), 0);
+    const minPrice = vars.length > 0 ? Math.min(...vars.map((v: any) => v.price)) : 0;
+    const minPromo = vars.length > 0
+      ? Math.min(...vars.filter((v: any) => v.promotional_price != null).map((v: any) => v.promotional_price))
       : null;
 
-    return {
-      id: row.id,
-      name: row.name,
-      slug: row.slug,
-      brandId: row.brand_id,
-      categoryId: row.category_id,
-      description: row.description,
-      shortDescription: row.short_description,
-      family: row.family,
-      concentration: row.concentration,
-      gender: row.gender,
-      occasion: row.occasion,
-      longevity: row.longevity,
-      projection: row.projection,
-      featured: row.featured,
-      active: row.active,
-      promotionalPrice: minPromo,
-      viewCount: row.view_count,
+    results.push({
+      id: row.id, name: row.name, slug: row.slug,
+      brandId: row.brand_id, categoryId: row.category_id,
+      description: row.description, shortDescription: row.short_description,
+      family: row.family, concentration: row.concentration,
+      gender: row.gender, occasion: row.occasion, longevity: row.longevity, projection: row.projection,
+      featured: row.featured, active: row.active,
+      promotionalPrice: minPromo, viewCount: row.view_count,
       created_at: row.created_at,
-      brand: row.brand_name,
-      brandSlug: row.brand_slug,
-      category: row.category_name,
-      categorySlug: row.category_slug,
-      price: minPrice,
-      stock: totalStock,
-      variants: variants.map(v => ({
-        sizeMl: v.size_ml,
-        price: v.price,
-        promotionalPrice: v.promotional_price,
-        stock: v.stock,
-      })),
-      images: images.map(i => i.url),
-    };
-  });
+      brand: brand?.name ?? null, brandSlug: brand?.slug ?? null,
+      category: cat?.name ?? null, categorySlug: cat?.slug ?? null,
+      price: minPrice, stock: totalStock,
+      variants: vars.map((v: any) => ({ sizeMl: v.size_ml, price: v.price, promotionalPrice: v.promotional_price, stock: v.stock })),
+      images: (images ?? []).map((i: any) => i.url),
+    });
+  }
+  return results;
 }
 
-export function updateProduct(id: string, data: ProductInput) {
-  const existing = getProduct(id);
+export async function createProduct(data: ProductInput): Promise<ProductResponse | undefined> {
+  const slug = slugify(data.name);
+  const { data: p, error } = await supabase.from('products').insert({
+    brand_id: data.brandId ?? null, category_id: data.categoryId ?? null,
+    name: data.name, slug, sku: data.sku ?? null, barcode: data.barcode ?? null,
+    description: data.description ?? null, short_description: data.shortDescription ?? null,
+    family: data.family ?? null, concentration: data.concentration ?? null,
+    gender: data.gender ?? null, country: data.country ?? null,
+    occasion: data.occasion ?? null, longevity: data.longevity ?? null, projection: data.projection ?? null,
+    featured: data.featured ? 1 : 0,
+    promotional_price: data.promotionalPrice ?? null,
+    promotion_start: data.promotionStart ?? null, promotion_end: data.promotionEnd ?? null,
+  }).select('*').single();
+
+  if (error || !p) throw new Error(error?.message ?? 'Failed to create product');
+
+  // Variants
+  if (data.variants && data.variants.length > 0) {
+    await supabase.from('product_variants').insert(
+      data.variants.map(v => ({
+        product_id: p.id, size_ml: v.sizeMl, price: v.price,
+        promotional_price: v.promotionalPrice ?? null, stock: v.stock, sku: v.sku ?? null,
+      }))
+    );
+  } else {
+    await supabase.from('product_variants').insert({ product_id: p.id, size_ml: 50, price: 0, stock: 0 });
+  }
+
+  // Images
+  if (data.images && data.images.length > 0) {
+    await supabase.from('product_images').insert(
+      data.images.map((img, i) => ({
+        product_id: p.id, url: img.url, sort_order: i, is_main: img.isMain ? 1 : (i === 0 ? 1 : 0),
+      }))
+    );
+  }
+
+  // Notes
+  if (data.notes && data.notes.length > 0) {
+    await supabase.from('product_notes').insert(
+      data.notes.map(n => ({ product_id: p.id, type: n.type, name: n.name }))
+    );
+  }
+
+  await logAudit(null, 'CREATE', 'product', p.id);
+  return getProduct(p.id);
+}
+
+export async function updateProduct(id: string, data: ProductInput): Promise<ProductResponse | undefined> {
+  const existing = await getProduct(id);
   if (!existing) return undefined;
 
   const slug = data.name ? slugify(data.name) : existing.slug;
+  const { error } = await supabase.from('products').update({
+    brand_id: data.brandId ?? existing.brandId ?? null,
+    category_id: data.categoryId ?? existing.categoryId ?? null,
+    name: data.name ?? existing.name, slug,
+    sku: data.sku ?? existing.sku ?? null, barcode: data.barcode ?? existing.barcode ?? null,
+    description: data.description ?? existing.description ?? null,
+    short_description: data.shortDescription ?? existing.shortDescription ?? null,
+    family: data.family ?? existing.family ?? null,
+    concentration: data.concentration ?? existing.concentration ?? null,
+    gender: data.gender ?? existing.gender ?? null, country: data.country ?? existing.country ?? null,
+    occasion: data.occasion ?? existing.occasion ?? null,
+    longevity: data.longevity ?? existing.longevity ?? null,
+    projection: data.projection ?? existing.projection ?? null,
+    featured: data.featured !== undefined ? (data.featured ? 1 : 0) : existing.featured ? 1 : 0,
+    promotional_price: data.promotionalPrice ?? existing.promotionalPrice ?? null,
+    promotion_start: data.promotionStart ?? existing.promotionStart ?? null,
+    promotion_end: data.promotionEnd ?? existing.promotionEnd ?? null,
+    updated_at: new Date().toISOString(),
+  }).eq('id', id);
 
-  db.prepare(`
-    UPDATE products SET
-      brand_id = ?, category_id = ?, name = ?, slug = ?, sku = ?, barcode = ?,
-      description = ?, short_description = ?, family = ?, concentration = ?, gender = ?,
-      country = ?, occasion = ?, longevity = ?, projection = ?, featured = ?,
-      promotional_price = ?, promotion_start = ?, promotion_end = ?,
-      updated_at = datetime('now')
-    WHERE id = ?
-  `).run(
-    data.brandId ?? existing.brandId ?? null,
-    data.categoryId ?? existing.categoryId ?? null,
-    data.name ?? existing.name,
-    slug,
-    data.sku ?? existing.sku ?? null,
-    data.barcode ?? existing.barcode ?? null,
-    data.description ?? existing.description ?? null,
-    data.shortDescription ?? existing.shortDescription ?? null,
-    data.family ?? existing.family ?? null,
-    data.concentration ?? existing.concentration ?? null,
-    data.gender ?? existing.gender ?? null,
-    data.country ?? existing.country ?? null,
-    data.occasion ?? existing.occasion ?? null,
-    data.longevity ?? existing.longevity ?? null,
-    data.projection ?? existing.projection ?? null,
-    data.featured !== undefined ? (data.featured ? 1 : 0) : existing.featured ? 1 : 0,
-    data.promotionalPrice ?? existing.promotionalPrice ?? null,
-    data.promotionStart ?? existing.promotionStart ?? null,
-    data.promotionEnd ?? existing.promotionEnd ?? null,
-    id,
-  );
+  if (error) throw new Error(error.message);
 
-  // Replace variants if provided
   if (data.variants) {
-    db.prepare('DELETE FROM product_variants WHERE product_id = ?').run(id);
-    for (const v of data.variants) {
-      db.prepare(
-        'INSERT INTO product_variants (id, product_id, size_ml, price, promotional_price, stock, sku) VALUES (?, ?, ?, ?, ?, ?, ?)'
-      ).run(crypto.randomUUID(), id, v.sizeMl, v.price, v.promotionalPrice ?? null, v.stock, v.sku ?? null);
-    }
+    await supabase.from('product_variants').delete().eq('product_id', id);
+    await supabase.from('product_variants').insert(
+      data.variants.map(v => ({
+        product_id: id, size_ml: v.sizeMl, price: v.price,
+        promotional_price: v.promotionalPrice ?? null, stock: v.stock, sku: v.sku ?? null,
+      }))
+    );
   }
 
-  // Replace images if provided
   if (data.images) {
-    db.prepare('DELETE FROM product_images WHERE product_id = ?').run(id);
-    data.images.forEach((img, i) => {
-      db.prepare(
-        'INSERT INTO product_images (id, product_id, url, sort_order, is_main) VALUES (?, ?, ?, ?, ?)'
-      ).run(crypto.randomUUID(), id, img.url, i, img.isMain ? 1 : i === 0 ? 1 : 0);
-    });
+    await supabase.from('product_images').delete().eq('product_id', id);
+    await supabase.from('product_images').insert(
+      data.images.map((img, i) => ({
+        product_id: id, url: img.url, sort_order: i, is_main: img.isMain ? 1 : (i === 0 ? 1 : 0),
+      }))
+    );
   }
 
-  // Replace notes if provided
   if (data.notes) {
-    db.prepare('DELETE FROM product_notes WHERE product_id = ?').run(id);
-    for (const n of data.notes) {
-      db.prepare(
-        'INSERT INTO product_notes (id, product_id, type, name) VALUES (?, ?, ?, ?)'
-      ).run(crypto.randomUUID(), id, n.type, n.name);
-    }
+    await supabase.from('product_notes').delete().eq('product_id', id);
+    await supabase.from('product_notes').insert(
+      data.notes.map(n => ({ product_id: id, type: n.type, name: n.name }))
+    );
   }
 
-  logAudit(null, 'UPDATE', 'product', id);
+  await logAudit(null, 'UPDATE', 'product', id);
   return getProduct(id);
 }
 
-export function deleteProduct(id: string) {
-  const result = db.prepare('DELETE FROM products WHERE id = ?').run(id);
-  return result.changes > 0;
+export async function deleteProduct(id: string) {
+  const { error } = await supabase.from('products').delete().eq('id', id);
+  return !error;
 }
 
-export function incrementViewCount(productId: string, ip?: string) {
-  db.prepare('UPDATE products SET view_count = view_count + 1 WHERE id = ?').run(productId);
-  db.prepare(
-    'INSERT INTO product_views (id, product_id, ip) VALUES (?, ?, ?)'
-  ).run(crypto.randomUUID(), productId, ip ?? null);
+export async function incrementViewCount(productId: string, ip?: string) {
+  // Increment view_count
+  const { data: p } = await supabase.from('products').select('view_count').eq('id', productId).single();
+  if (p) {
+    await supabase.from('products').update({ view_count: (p.view_count ?? 0) + 1 }).eq('id', productId);
+  }
+  await supabase.from('product_views').insert({ product_id: productId, ip: ip ?? null });
 }
 
-export function getMostViewed(limit = 10) {
-  const rows = db.prepare(`
-    SELECT p.*, b.name as brand_name
-    FROM products p
-    LEFT JOIN brands b ON b.id = p.brand_id
-    WHERE p.active = 1
-    ORDER BY p.view_count DESC
-    LIMIT ?
-  `).all(limit) as Record<string, unknown>[];
+export async function getMostViewed(limit = 10) {
+  const { data: rows } = await supabase
+    .from('products')
+    .select('*')
+    .eq('active', 1)
+    .order('view_count', { ascending: false })
+    .limit(limit);
 
-  return rows.map(row => {
-    const images = db.prepare(
-      'SELECT url FROM product_images WHERE product_id = ? ORDER BY sort_order LIMIT 1'
-    ).all(row.id as string) as { url: string }[];
-    return {
-      ...row,
-      brand: row.brand_name,
-      images: images.map(i => i.url),
-    };
-  });
+  if (!rows) return [];
+
+  const results = [];
+  for (const row of rows) {
+    const { data: brand } = row.brand_id ? await supabase.from('brands').select('name').eq('id', row.brand_id).single() : { data: null };
+    const { data: images } = await supabase.from('product_images').select('url').eq('product_id', row.id).order('sort_order').limit(1);
+    results.push({ ...row, brand: brand?.name ?? null, images: (images ?? []).map((i: any) => i.url) });
+  }
+  return results;
 }
 
 // ─── Backup ───────────────────────────────────────────────────────────────────
-export function createBackup() {
+export async function createBackup() {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const backupPath = path.join(backupDir, `janilly-${timestamp}.db`);
-  copyFileSync(dbPath, backupPath);
-  return backupPath;
+  const { data: products } = await supabase.from('products').select('*');
+  const { data: brands } = await supabase.from('brands').select('*');
+  const { data: categories } = await supabase.from('categories').select('*');
+  const backup = { timestamp, products: products ?? [], brands: brands ?? [], categories: categories ?? [] };
+  return JSON.stringify(backup);
 }
 
-export function getBackupInfo() {
-  const files = require('fs').readdirSync(backupDir).filter((f: string) => f.endsWith('.db')).sort().reverse();
-  return {
-    count: files.length,
-    lastBackup: files.length > 0 ? files[0] : null,
-  };
+export async function getBackupInfo() {
+  return { count: 0, lastBackup: 'Supabase Cloud (always available)', message: 'Dados hospedados no Supabase' };
 }
 
 // ─── Dashboard Stats ──────────────────────────────────────────────────────────
-export function getDashboardStats() {
-  const totalProducts = (db.prepare('SELECT COUNT(*) as cnt FROM products WHERE active = 1').get() as { cnt: number }).cnt;
-  const activeProducts = totalProducts;
-  const outOfStock = (db.prepare(`
-    SELECT COUNT(DISTINCT p.id) as cnt FROM products p
-    JOIN product_variants pv ON pv.product_id = p.id
-    WHERE p.active = 1 AND pv.stock = 0 AND NOT EXISTS (
-      SELECT 1 FROM product_variants pv2 WHERE pv2.product_id = p.id AND pv2.stock > 0
-    )
-  `).get() as { cnt: number }).cnt;
+export async function getDashboardStats() {
+  const { count: totalProducts } = await supabase.from('products').select('*', { count: 'exact', head: true }).eq('active', 1);
 
-  const lowStock = (db.prepare(`
-    SELECT COUNT(DISTINCT p.id) as cnt FROM products p
-    JOIN product_variants pv ON pv.product_id = p.id
-    WHERE p.active = 1 AND pv.stock > 0 AND pv.stock <= 5
-  `).get() as { cnt: number }).cnt;
+  const { data: allProducts } = await supabase.from('products').select('id').eq('active', 1);
+  const { data: allVariants } = await supabase.from('product_variants').select('product_id, stock');
+  const { data: promoProducts } = await supabase.from('products').select('id').eq('active', 1).not('promotional_price', 'is', null);
 
-  const totalStock = (db.prepare('SELECT COALESCE(SUM(stock), 0) as total FROM product_variants').get() as { total: number }).total;
+  let outOfStock = 0;
+  let lowStock = 0;
+  let totalStock = 0;
+  const productStocks: Record<string, number> = {};
 
-  const productsOnPromotion = (db.prepare(`
-    SELECT COUNT(*) as cnt FROM products
-    WHERE active = 1 AND promotional_price IS NOT NULL
-    AND (promotion_start IS NULL OR promotion_start <= datetime('now'))
-    AND (promotion_end IS NULL OR promotion_end >= datetime('now'))
-  `).get() as { cnt: number }).cnt;
+  for (const v of allVariants ?? []) {
+    productStocks[v.product_id] = (productStocks[v.product_id] ?? 0) + (v.stock ?? 0);
+    totalStock += v.stock ?? 0;
+  }
 
-  const mostViewed = getMostViewed(5);
+  for (const p of allProducts ?? []) {
+    const stock = productStocks[p.id] ?? 0;
+    if (stock === 0) outOfStock++;
+    else if (stock <= 5) lowStock++;
+  }
+
+  const mostViewed = await getMostViewed(5);
 
   return {
-    totalProducts,
-    activeProducts,
+    totalProducts: totalProducts ?? 0,
+    activeProducts: totalProducts ?? 0,
     outOfStock,
     lowStock,
     totalStock,
-    productsOnPromotion,
+    productsOnPromotion: promoProducts?.length ?? 0,
     mostViewed,
   };
 }
 
 // ─── Seed ─────────────────────────────────────────────────────────────────────
-function seedInitialData() {
-  const userCount = (db.prepare('SELECT COUNT(*) as cnt FROM users').get() as { cnt: number }).cnt;
-  if (userCount === 0) {
-    createUser('admin', 'janilly@2026', 'admin');
+export async function seedInitialData() {
+  const { count: userCount } = await supabase.from('users').select('*', { count: 'exact', head: true });
+  if ((userCount ?? 0) === 0) {
+    const passwordHash = hashPassword('admin');
+    await supabase.from('users').insert({ username: 'admin', password_hash: passwordHash, role: 'admin' });
   }
 
-  const brandCount = (db.prepare('SELECT COUNT(*) as cnt FROM brands').get() as { cnt: number }).cnt;
-  if (brandCount === 0) {
-    const arabicBrands = [
+  const { count: brandCount } = await supabase.from('brands').select('*', { count: 'exact', head: true });
+  if ((brandCount ?? 0) === 0) {
+    const brands = [
       { name: 'Lattafa', country: 'Emirados Árabes' },
       { name: 'Afnan', country: 'Emirados Árabes' },
       { name: 'Armaf', country: 'Emirados Árabes' },
@@ -882,13 +607,11 @@ function seedInitialData() {
       { name: 'Abdul Samad Al Qurashi', country: 'Arábia Saudita' },
       { name: 'Hamidi', country: 'Emirados Árabes' },
     ];
-    for (const b of arabicBrands) {
-      createBrand(b);
-    }
+    await supabase.from('brands').insert(brands.map(b => ({ ...b, slug: slugify(b.name) })));
   }
 
-  const catCount = (db.prepare('SELECT COUNT(*) as cnt FROM categories').get() as { cnt: number }).cnt;
-  if (catCount === 0) {
+  const { count: catCount } = await supabase.from('categories').select('*', { count: 'exact', head: true });
+  if ((catCount ?? 0) === 0) {
     const cats = [
       { name: 'Masculino', slug: 'masculino' },
       { name: 'Feminino', slug: 'feminino' },
@@ -897,178 +620,11 @@ function seedInitialData() {
       { name: 'Promoções', slug: 'promocoes' },
       { name: 'Mais Vendidos', slug: 'mais-vendidos' },
     ];
-    for (const c of cats) {
-      createCategory(c);
-    }
-  }
-
-  const prodCount = (db.prepare('SELECT COUNT(*) as cnt FROM products').get() as { cnt: number }).cnt;
-  if (prodCount === 0) {
-    const brands = listBrands() as { id: string; name: string }[];
-    const getBrandId = (name: string) => brands.find(b => b.name === name)?.id;
-
-    const arabicPerfumes = [
-      {
-        name: 'Khamrah', brandId: getBrandId('Lattafa'), family: 'Oriental', concentration: 'EdP', gender: 'M',
-        description: 'Khamrah é uma fragrância oriental intensa e envolvente. Com notas de topo de canela e noz-moscada, coração de baunilha e âmbar, e fundo de sândalo e couro, é perfeita para noites especiais.',
-        shortDescription: 'Oriental intensa com baunilha e âmbar',
-        occasion: 'Noite', longevity: 'Longa', projection: 'Forte',
-        variants: [
-          { sizeMl: 50, price: 149.90, stock: 15 },
-          { sizeMl: 100, price: 229.90, stock: 10 },
-        ],
-        notes: [
-          { type: 'top' as const, name: 'Canela' }, { type: 'top' as const, name: 'Noz-moscada' },
-          { type: 'heart' as const, name: 'Baunilha' }, { type: 'heart' as const, name: 'Âmbar' },
-          { type: 'base' as const, name: 'Sândalo' }, { type: 'base' as const, name: 'Couro' },
-        ],
-      },
-      {
-        name: '9PM', brandId: getBrandId('Afnan'), family: 'Oriental', concentration: 'EdP', gender: 'M',
-        description: '9PM é uma fragrância moderna e viciante. Abertura doced de maçã verde e flor de laranjeira, coração de lavanda e baunilha, com fundo de âmbar e almíscar.',
-        shortDescription: 'Moderna e viciante com baunilha',
-        occasion: 'Noite', longevity: 'Longa', projection: 'Forte',
-        variants: [
-          { sizeMl: 50, price: 139.90, stock: 20 },
-          { sizeMl: 100, price: 199.90, stock: 12 },
-        ],
-        notes: [
-          { type: 'top' as const, name: 'Maçã Verde' }, { type: 'top' as const, name: 'Flor de Laranjeira' },
-          { type: 'heart' as const, name: 'Lavanda' }, { type: 'heart' as const, name: 'Baunilha' },
-          { type: 'base' as const, name: 'Âmbar' }, { type: 'base' as const, name: 'Almíscar' },
-        ],
-      },
-      {
-        name: 'Club de Nuit Intense', brandId: getBrandId('Armaf'), family: 'Amadeirado', concentration: 'EdP', gender: 'M',
-        description: 'Inspirado em fragrâncias clássicas francesas. Abertura cítrica de limão e bergamota, coração de rosas e jasmim, com fundo de vetiver e âmbar.',
-        shortDescription: 'Cítrica e elegante com rosas',
-        occasion: 'Dia', longevity: 'Média', projection: 'Médio',
-        variants: [
-          { sizeMl: 50, price: 119.90, stock: 25 },
-          { sizeMl: 100, price: 179.90, stock: 18 },
-        ],
-        notes: [
-          { type: 'top' as const, name: 'Limão' }, { type: 'top' as const, name: 'Bergamota' },
-          { type: 'heart' as const, name: 'Rosa' }, { type: 'heart' as const, name: 'Jasmim' },
-          { type: 'base' as const, name: 'Vetiver' }, { type: 'base' as const, name: 'Âmbar' },
-        ],
-      },
-      {
-        name: 'L\'Aventure', brandId: getBrandId('Maison Alhambra'), family: 'Amadeirado', concentration: 'EdP', gender: 'M',
-        description: 'Fragrância fresca e aventurera. Notas aquáticas de melão e pepino, com toques de pimenta e fundo de musgo e cedro.',
-        shortDescription: 'Fresca e aventurera aquática',
-        occasion: 'Dia', longevity: 'Média', projection: 'Médio',
-        variants: [
-          { sizeMl: 50, price: 109.90, stock: 15 },
-          { sizeMl: 100, price: 169.90, stock: 10 },
-        ],
-        notes: [
-          { type: 'top' as const, name: 'Melão' }, { type: 'top' as const, name: 'Pepino' },
-          { type: 'heart' as const, name: 'Pimenta' }, { type: 'heart' as const, name: 'Lavanda' },
-          { type: 'base' as const, name: 'Musgo' }, { type: 'base' as const, name: 'Cedro' },
-        ],
-      },
-      {
-        name: 'Oud Wild', brandId: getBrandId('Rasasi'), family: 'Oriental', concentration: 'EdP', gender: 'Unissex',
-        description: 'Oud selvagem e puro. Uma experiência olfativa intensa com madeira de oud, pachouli e âmbar negro.',
-        shortDescription: 'Oud selvagem e puro',
-        occasion: 'Noite', longevity: 'Muito Longa', projection: 'Forte',
-        variants: [
-          { sizeMl: 50, price: 249.90, stock: 8 },
-          { sizeMl: 100, price: 389.90, stock: 5 },
-        ],
-        notes: [
-          { type: 'top' as const, name: 'Pimenta Rosa' }, { type: 'top' as const, name: 'Açafrão' },
-          { type: 'heart' as const, name: 'Oud' }, { type: 'heart' as const, name: 'Pachouli' },
-          { type: 'base' as const, name: 'Âmbar Negro' }, { type: 'base' as const, name: 'Almíscar' },
-        ],
-      },
-      {
-        name: 'Silver Blur', brandId: getBrandId('Ajmal'), family: 'Aquático', concentration: 'EdP', gender: 'M',
-        description: 'Fragrância aquática moderna e sofisticada. Notas marinhas, cítricas e de madeira clara.',
-        shortDescription: 'Aquática moderna e sofisticada',
-        occasion: 'Dia', longevity: 'Média', projection: 'Médio',
-        variants: [
-          { sizeMl: 50, price: 129.90, stock: 12 },
-          { sizeMl: 100, price: 189.90, stock: 8 },
-        ],
-        notes: [
-          { type: 'top' as const, name: 'Bergamota' }, { type: 'top' as const, name: 'Água Marine' },
-          { type: 'heart' as const, name: 'Lavanda' }, { type: 'heart' as const, name: 'Gerânio' },
-          { type: 'base' as const, name: 'Cedro' }, { type: 'base' as const, name: 'Âmbar' },
-        ],
-      },
-      {
-        name: 'Rafa High', brandId: getBrandId('Al Rehab'), family: 'Floral', concentration: 'Parfum', gender: 'F',
-        description: 'Floral delicado e envolvente. Notas de rosa, jasmim e peônia com fundo de almíscar branco.',
-        shortDescription: 'Floral delicado com rosas',
-        occasion: 'Dia', longevity: 'Longa', projection: 'Médio',
-        variants: [
-          { sizeMl: 50, price: 89.90, stock: 20 },
-          { sizeMl: 100, price: 149.90, stock: 15 },
-        ],
-        notes: [
-          { type: 'top' as const, name: 'Rosa' }, { type: 'top' as const, name: 'Peônia' },
-          { type: 'heart' as const, name: 'Jasmim' }, { type: 'heart' as const, name: 'Ylang-ylang' },
-          { type: 'base' as const, name: 'Almíscar Branco' }, { type: 'base' as const, name: 'Sândalo' },
-        ],
-      },
-      {
-        name: 'Haya', brandId: getBrandId('Swiss Arabian'), family: 'Oriental', concentration: 'EdP', gender: 'F',
-        description: 'Oriental doce e sofisticado. Baunilha, carameloe flores brancas se misturam em uma composição luxuosa.',
-        shortDescription: 'Oriental doce e sofisticado',
-        occasion: 'Noite', longevity: 'Longa', projection: 'Forte',
-        variants: [
-          { sizeMl: 50, price: 179.90, stock: 10 },
-          { sizeMl: 100, price: 269.90, stock: 6 },
-        ],
-        notes: [
-          { type: 'top' as const, name: 'Açafrão' }, { type: 'top' as const, name: 'Damascena' },
-          { type: 'heart' as const, name: 'Baunilha' }, { type: 'heart' as const, name: 'Caramelo' },
-          { type: 'base' as const, name: 'Oud' }, { type: 'base' as const, name: 'Almíscar' },
-        ],
-      },
-      {
-        name: 'Al Oud', brandId: getBrandId('Abdul Samad Al Qurashi'), family: 'Oriental', concentration: 'Parfum', gender: 'M',
-        description: 'Oud puro e nobre da tradição árabe. Composição intensa e duradoura para os apreciadores de fragrâncias orientais.',
-        shortDescription: 'Oud puro e nobre',
-        occasion: 'Noite', longevity: 'Muito Longa', projection: 'Forte',
-        variants: [
-          { sizeMl: 50, price: 329.90, stock: 5 },
-          { sizeMl: 100, price: 499.90, stock: 3 },
-        ],
-        notes: [
-          { type: 'top' as const, name: 'Açafrão' }, { type: 'top' as const, name: 'Cardamomo' },
-          { type: 'heart' as const, name: 'Oud' }, { type: 'heart' as const, name: 'Rosa' },
-          { type: 'base' as const, name: 'Sândalo' }, { type: 'base' as const, name: 'Âmbar' },
-        ],
-      },
-      {
-        name: 'Ice Drink', brandId: getBrandId('Hamidi'), family: 'Aquático', concentration: 'EdT', gender: 'M',
-        description: 'Frescor gelado e refrescante. Perfeita para os dias quentes com notas de menta, cítricos e âmbar gelado.',
-        shortDescription: 'Frescor gelado e refrescante',
-        occasion: 'Dia', longevity: 'Média', projection: 'Médio',
-        variants: [
-          { sizeMl: 50, price: 79.90, stock: 30 },
-          { sizeMl: 100, price: 129.90, stock: 20 },
-        ],
-        notes: [
-          { type: 'top' as const, name: 'Menta' }, { type: 'top' as const, name: 'Limão' },
-          { type: 'heart' as const, name: 'Manjericão' }, { type: 'heart' as const, name: 'Gengibre' },
-          { type: 'base' as const, name: 'Âmbar Gelado' }, { type: 'base' as const, name: 'Cedro' },
-        ],
-      },
-    ];
-
-    for (const p of arabicPerfumes) {
-      createProduct(p);
-    }
+    await supabase.from('categories').insert(cats);
   }
 }
 
-seedInitialData();
-
-// ─── Legacy Compatibility (for backward compat with existing frontend code) ───
+// ─── Legacy ───────────────────────────────────────────────────────────────────
 export function normalizeVariants(input: unknown) {
   if (!Array.isArray(input)) return [];
   return input

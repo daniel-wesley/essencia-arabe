@@ -10,13 +10,13 @@ function getTokenFromRequest(request: Request): string | null {
 export async function GET(request: Request) {
   const token = getTokenFromRequest(request);
   if (!token) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-  const session = validateSession(token);
+  const session = await validateSession(token);
   if (!session || session.role !== 'admin') {
     return NextResponse.json({ error: 'Apenas administradores.' }, { status: 403 });
   }
 
   try {
-    return NextResponse.json(getAuditLogs(100));
+    return NextResponse.json(await getAuditLogs(100));
   } catch (err) {
     console.error('GET /api/audit error:', err);
     return NextResponse.json({ error: 'Erro interno.' }, { status: 500 });

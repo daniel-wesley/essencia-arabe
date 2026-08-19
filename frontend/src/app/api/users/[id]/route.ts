@@ -12,7 +12,7 @@ function getTokenFromRequest(request: Request): string | null {
 export async function PATCH(request: Request, { params }: Params) {
   const token = getTokenFromRequest(request);
   if (!token) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-  const session = validateSession(token);
+  const session = await validateSession(token);
   if (!session || session.role !== 'admin') {
     return NextResponse.json({ error: 'Apenas administradores.' }, { status: 403 });
   }
@@ -22,10 +22,10 @@ export async function PATCH(request: Request, { params }: Params) {
     const body = await request.json();
 
     if (body.role && ['admin', 'editor', 'viewer'].includes(body.role)) {
-      updateUserRole(id, body.role);
+      await updateUserRole(id, body.role);
     }
     if (body.active !== undefined) {
-      updateUserActive(id, !!body.active);
+      await updateUserActive(id, !!body.active);
     }
 
     return NextResponse.json({ success: true });

@@ -12,7 +12,7 @@ function getTokenFromRequest(request: Request): string | null {
 export async function GET(request: Request, { params }: Params) {
   try {
     const { id } = await params;
-    const product = getProduct(id);
+    const product = await getProduct(id);
 
     if (!product) {
       return NextResponse.json({ error: 'Produto não encontrado.' }, { status: 404 });
@@ -20,7 +20,7 @@ export async function GET(request: Request, { params }: Params) {
 
     // Increment view count
     const ip = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? 'unknown';
-    incrementViewCount(product.id as string, ip);
+    await incrementViewCount(product.id as string, ip);
 
     return NextResponse.json(product);
   } catch (err) {
@@ -34,7 +34,7 @@ export async function PATCH(request: Request, { params }: Params) {
   if (!token) {
     return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
   }
-  const session = validateSession(token);
+  const session = await validateSession(token);
   if (!session || !['admin', 'editor'].includes(session.role)) {
     return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
   }
@@ -58,7 +58,7 @@ export async function PATCH(request: Request, { params }: Params) {
       ? body.notes.filter((n: unknown) => n && typeof n === 'object' && 'type' in (n as Record<string, unknown>) && 'name' in (n as Record<string, unknown>))
       : undefined;
 
-    const product = updateProduct(id, {
+    const product = await updateProduct(id, {
       name,
       brandId: body.brandId,
       categoryId: body.categoryId,
@@ -98,14 +98,14 @@ export async function DELETE(request: Request, { params }: Params) {
   if (!token) {
     return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
   }
-  const session = validateSession(token);
+  const session = await validateSession(token);
   if (!session || session.role !== 'admin') {
     return NextResponse.json({ error: 'Apenas administradores podem excluir produtos.' }, { status: 403 });
   }
 
   try {
     const { id } = await params;
-    const ok = deleteProduct(id);
+    const ok = await deleteProduct(id);
 
     if (!ok) {
       return NextResponse.json({ error: 'Produto não encontrado.' }, { status: 404 });

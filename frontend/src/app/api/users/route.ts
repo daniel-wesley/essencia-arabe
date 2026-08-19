@@ -10,13 +10,13 @@ function getTokenFromRequest(request: Request): string | null {
 export async function GET(request: Request) {
   const token = getTokenFromRequest(request);
   if (!token) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-  const session = validateSession(token);
+  const session = await validateSession(token);
   if (!session || session.role !== 'admin') {
     return NextResponse.json({ error: 'Apenas administradores.' }, { status: 403 });
   }
 
   try {
-    return NextResponse.json(listUsers());
+    return NextResponse.json(await listUsers());
   } catch (err) {
     console.error('GET /api/users error:', err);
     return NextResponse.json({ error: 'Erro interno.' }, { status: 500 });
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const token = getTokenFromRequest(request);
   if (!token) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-  const session = validateSession(token);
+  const session = await validateSession(token);
   if (!session || session.role !== 'admin') {
     return NextResponse.json({ error: 'Apenas administradores.' }, { status: 403 });
   }
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Função inválida.' }, { status: 400 });
     }
 
-    const user = createUser(username, password, role);
+    const user = await createUser(username, password, role);
     return NextResponse.json(user, { status: 201 });
   } catch (err) {
     console.error('POST /api/users error:', err);

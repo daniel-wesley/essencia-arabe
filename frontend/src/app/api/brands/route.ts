@@ -9,7 +9,7 @@ function getTokenFromRequest(request: Request): string | null {
 
 export async function GET() {
   try {
-    return NextResponse.json(listBrands());
+    return NextResponse.json(await listBrands());
   } catch (err) {
     console.error('GET /api/brands error:', err);
     return NextResponse.json({ error: 'Erro interno.' }, { status: 500 });
@@ -19,7 +19,7 @@ export async function GET() {
 export async function POST(request: Request) {
   const token = getTokenFromRequest(request);
   if (!token) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-  const session = validateSession(token);
+  const session = await validateSession(token);
   if (!session || !['admin', 'editor'].includes(session.role)) {
     return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
   }
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     const name = (body.name ?? '').toString().trim();
     if (!name) return NextResponse.json({ error: 'Nome é obrigatório.' }, { status: 400 });
 
-    const brand = createBrand({
+    const brand = await createBrand({
       name,
       slug: body.slug,
       country: body.country,

@@ -13,7 +13,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ authenticated: false }, { status: 401 });
   }
 
-  const session = validateSession(token);
+  const session = await validateSession(token);
   if (!session) {
     return NextResponse.json({ authenticated: false }, { status: 401 });
   }
@@ -39,27 +39,27 @@ export async function POST(request: Request) {
     }
 
     // Rate limiting
-    const rateLimit = checkRateLimit(username, ip);
+    const rateLimit = await checkRateLimit(username);
     if (!rateLimit.allowed) {
-      recordLoginAttempt(username, false, ip);
+      await recordLoginAttempt(username, false, ip);
       return NextResponse.json(
         { error: `Conta bloqueada temporariamente. Tente novamente em 15 minutos.` },
         { status: 429 },
       );
     }
 
-    const user = authenticateUser(username, password);
+    const user = await authenticateUser(username, password);
 
     if (!user) {
-      recordLoginAttempt(username, false, ip);
+      await recordLoginAttempt(username, false, ip);
       return NextResponse.json(
         { error: `Credenciais inválidas. ${rateLimit.remaining - 1} tentativa(s) restante(s).` },
         { status: 401 },
       );
     }
 
-    recordLoginAttempt(username, true, ip);
-    const token = createSession(user.id, ip);
+    await recordLoginAttempt(username, true, ip);
+    const token = await createSession(user.id, ip);
 
     const response = NextResponse.json({
       user: { id: user.id, username: user.username, role: user.role },
@@ -86,7 +86,7 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   const token = getTokenFromRequest(request);
   if (token) {
-    destroySession(token);
+    await destroySession(token);
   }
 
   const response = NextResponse.json({ success: true });

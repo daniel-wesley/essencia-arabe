@@ -7,10 +7,10 @@ function getTokenFromRequest(request: Request): string | null {
   return request.headers.get('cookie')?.match(/session_token=([^;]+)/)?.[1] ?? null;
 }
 
-function requireAuth(request: Request, allowedRoles: string[] = ['admin', 'editor']): { authorized: boolean; user?: { id: string; username: string; role: string } } {
+async function requireAuth(request: Request, allowedRoles: string[] = ['admin', 'editor']): Promise<{ authorized: boolean; user?: { id: string; username: string; role: string } }> {
   const token = getTokenFromRequest(request);
   if (!token) return { authorized: false };
-  const session = validateSession(token);
+  const session = await validateSession(token);
   if (!session) return { authorized: false };
   if (!allowedRoles.includes(session.role)) return { authorized: false };
   return { authorized: true, user: session };
@@ -18,7 +18,7 @@ function requireAuth(request: Request, allowedRoles: string[] = ['admin', 'edito
 
 export async function GET() {
   try {
-    const products = listProducts();
+    const products = await listProducts();
     return NextResponse.json(products);
   } catch (err) {
     console.error('GET /api/products error:', err);
@@ -27,7 +27,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const auth = requireAuth(request, ['admin', 'editor']);
+    const auth = await requireAuth(request, ['admin', 'editor']);
   if (!auth.authorized) {
     return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
   }
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
       ? body.notes.filter((n: unknown) => n && typeof n === 'object' && 'type' in (n as Record<string, unknown>) && 'name' in (n as Record<string, unknown>))
       : [];
 
-    const product = createProduct({
+    const product = await createProduct({
       name,
       brandId: body.brandId,
       categoryId: body.categoryId,

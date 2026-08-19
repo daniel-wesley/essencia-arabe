@@ -12,7 +12,7 @@ function getTokenFromRequest(request: Request): string | null {
 export async function PATCH(request: Request, { params }: Params) {
   const token = getTokenFromRequest(request);
   if (!token) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-  const session = validateSession(token);
+  const session = await validateSession(token);
   if (!session || !['admin', 'editor'].includes(session.role)) {
     return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
   }
@@ -20,7 +20,7 @@ export async function PATCH(request: Request, { params }: Params) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const brand = updateBrand(id, body);
+    const brand = await updateBrand(id, body);
     if (!brand) return NextResponse.json({ error: 'Marca não encontrada.' }, { status: 404 });
     return NextResponse.json(brand);
   } catch (err) {
@@ -32,14 +32,14 @@ export async function PATCH(request: Request, { params }: Params) {
 export async function DELETE(request: Request, { params }: Params) {
   const token = getTokenFromRequest(request);
   if (!token) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
-  const session = validateSession(token);
+  const session = await validateSession(token);
   if (!session || session.role !== 'admin') {
     return NextResponse.json({ error: 'Apenas administradores.' }, { status: 403 });
   }
 
   try {
     const { id } = await params;
-    const ok = deleteBrand(id);
+    const ok = await deleteBrand(id);
     if (!ok) return NextResponse.json({ error: 'Marca não encontrada.' }, { status: 404 });
     return NextResponse.json({ success: true });
   } catch (err) {
