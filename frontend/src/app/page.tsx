@@ -32,9 +32,9 @@ export default function HomePage() {
   const [brands, setBrands] = useState<Brand[]>([]);
 
   useEffect(() => {
-    fetch('/api/products')
+    fetch('/api/products?featured=1')
       .then(r => r.ok ? r.json() : [])
-      .then((data: Product[]) => setFeaturedProducts(data.filter(p => p.featured).slice(0, 6)))
+      .then((data: Product[]) => setFeaturedProducts(data.slice(0, 6)))
       .catch(() => {});
     fetch('/api/brands')
       .then(r => r.ok ? r.json() : [])

@@ -43,38 +43,48 @@ export default function ProductsPage() {
 
 function ProductsContent() {
   const searchParams = useSearchParams();
-  const initialCategory = searchParams.get('category') ?? '';
+  const initialCategorySlug = searchParams.get('category') ?? '';
   const initialBrand = searchParams.get('brand') ?? '';
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterCategory, setFilterCategory] = useState(initialCategory);
+  const [filterCategory, setFilterCategory] = useState('');
   const [filterBrand, setFilterBrand] = useState(initialBrand);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/products').then(r => r.ok ? r.json() : []),
-      fetch('/api/categories').then(r => r.ok ? r.json() : []),
-      fetch('/api/brands').then(r => r.ok ? r.json() : []),
-    ]).then(([p, c, b]) => {
-      setProducts(p);
-      setCategories(c);
-      setBrands(b);
-    }).finally(() => setLoading(false));
+    fetch('/api/categories').then(r => r.ok ? r.json() : []).then((cats: Category[]) => {
+      setCategories(cats);
+      if (initialCategorySlug) {
+        const match = cats.find(c => c.slug === initialCategorySlug || c.id === initialCategorySlug);
+        if (match) setFilterCategory(match.id);
+      }
+    }).catch(() => {});
+    fetch('/api/brands').then(r => r.ok ? r.json() : []).then(setBrands).catch(() => {});
   }, []);
 
-  const filtered = products.filter(p => {
-    if (filterCategory && p.categorySlug !== filterCategory) return false;
-    if (filterBrand && p.brandId !== filterBrand) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      return p.name.toLowerCase().includes(q) || p.brand.toLowerCase().includes(q);
-    }
-    return true;
-  });
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (debouncedSearch) params.set('search', debouncedSearch);
+    if (filterCategory) params.set('categoryId', filterCategory);
+    if (filterBrand) params.set('brandId', filterBrand);
+    params.set('limit', '100');
+
+    fetch(`/api/products?${params.toString()}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(setProducts)
+      .catch(() => setProducts([]))
+      .finally(() => setLoading(false));
+  }, [debouncedSearch, filterCategory, filterBrand]);
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '2rem' }}>
@@ -100,7 +110,7 @@ function ProductsContent() {
           background: 'rgba(10,10,15,0.6)', color: '#f5f0e6', fontSize: '0.9rem',
         }}>
           <option value="">Todas as categorias</option>
-          {categories.map(c => <option key={c.id} value={c.slug}>{c.name}</option>)}
+          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         <select value={filterBrand} onChange={e => setFilterBrand(e.target.value)} style={{
           padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(200,168,78,0.2)',
@@ -121,7 +131,7 @@ function ProductsContent() {
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: '4rem', color: '#c8b898' }}>Carregando produtos...</div>
-      ) : filtered.length === 0 ? (
+      ) : products.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '4rem', color: '#c8b898' }}>
           <div style={{ fontSize: '3rem', marginBottom: 16 }}>🔍</div>
           <h2 style={{ fontSize: '1.2rem', color: '#faf5eb', marginBottom: 8 }}>Nenhum produto encontrado</h2>
@@ -129,7 +139,7 @@ function ProductsContent() {
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 24 }}>
-          {filtered.map(p => (
+          {products.map(p => (
             <a key={p.id} href={`/products/${p.slug || p.id}`} style={{
               display: 'block', borderRadius: 16, overflow: 'hidden',
               background: 'rgba(24, 24, 27, 0.7)', border: '1px solid rgba(200, 168, 78, 0.08)',

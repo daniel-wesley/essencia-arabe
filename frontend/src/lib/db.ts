@@ -9,6 +9,40 @@ export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY,
   auth: { persistSession: false },
 });
 
+// ─── In-Memory Cache ──────────────────────────────────────────────────────────
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+
+interface CacheEntry<T> {
+  data: T;
+  expiresAt: number;
+}
+
+const cache = new Map<string, CacheEntry<any>>();
+
+function getCached<T>(key: string): T | null {
+  const entry = cache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    cache.delete(key);
+    return null;
+  }
+  return entry.data as T;
+}
+
+function setCache<T>(key: string, data: T, ttlMs: number = CACHE_TTL_MS): void {
+  cache.set(key, { data, expiresAt: Date.now() + ttlMs });
+}
+
+export function invalidateCache(prefix?: string): void {
+  if (!prefix) {
+    cache.clear();
+    return;
+  }
+  for (const key of cache.keys()) {
+    if (key.startsWith(prefix)) cache.delete(key);
+  }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function slugify(text: string): string {
   return text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -49,7 +83,7 @@ export async function validateSession(token: string): Promise<{ id: string; user
     .select('id, user_id, users!inner(id, username, role, active)')
     .eq('token_hash', tokenHash)
     .gt('expires_at', new Date().toISOString())
-    .single();
+    .maybeSingle();
 
   if (!data || !data.users || (data.users as any).active !== 1) return null;
   const u = data.users as any;
@@ -121,7 +155,7 @@ export async function authenticateUser(username: string, password: string) {
     .select('id, username, password_hash, role')
     .eq('username', username)
     .eq('active', 1)
-    .single();
+    .maybeSingle();
 
   if (!data) return null;
   if (!verifyPassword(password, data.password_hash)) return null;
@@ -154,17 +188,23 @@ export async function createBrand(data: { name: string; slug?: string; country?:
     description: data.description ?? null, logo_url: data.logoUrl ?? null,
   }).select('*').single();
   if (error) throw new Error(error.message);
+  invalidateCache('brands');
   return result;
 }
 
 export async function getBrand(id: string) {
-  const { data } = await supabase.from('brands').select('*').eq('id', id).single();
+  const { data } = await supabase.from('brands').select('id, name, slug, country, logo_url').eq('id', id).maybeSingle();
   return data ?? undefined;
 }
 
 export async function listBrands() {
-  const { data } = await supabase.from('brands').select('*').eq('active', 1).order('name');
-  return data ?? [];
+  const cached = getCached<any[]>('brands:list');
+  if (cached) return cached;
+
+  const { data } = await supabase.from('brands').select('id, name, slug, country, logo_url').eq('active', 1).order('name');
+  const result = data ?? [];
+  setCache('brands:list', result);
+  return result;
 }
 
 export async function updateBrand(id: string, data: { name?: string; country?: string; description?: string; logoUrl?: string }) {
@@ -175,11 +215,13 @@ export async function updateBrand(id: string, data: { name?: string; country?: s
   if (data.logoUrl !== undefined) update.logo_url = data.logoUrl;
   if (Object.keys(update).length === 0) return getBrand(id);
   await supabase.from('brands').update(update).eq('id', id);
+  invalidateCache('brands');
   return getBrand(id);
 }
 
 export async function deleteBrand(id: string) {
   const { error } = await supabase.from('brands').update({ active: 0 }).eq('id', id);
+  invalidateCache('brands');
   return !error;
 }
 
@@ -190,17 +232,23 @@ export async function createCategory(data: { name: string; slug?: string; parent
     name: data.name, slug, parent_id: data.parentId ?? null, description: data.description ?? null,
   }).select('*').single();
   if (error) throw new Error(error.message);
+  invalidateCache('categories');
   return result;
 }
 
 export async function getCategory(id: string) {
-  const { data } = await supabase.from('categories').select('*').eq('id', id).single();
+  const { data } = await supabase.from('categories').select('id, name, slug, parent_id, description, sort_order').eq('id', id).maybeSingle();
   return data ?? undefined;
 }
 
 export async function listCategories() {
-  const { data } = await supabase.from('categories').select('*').eq('active', 1).order('sort_order').order('name');
-  return data ?? [];
+  const cached = getCached<any[]>('categories:list');
+  if (cached) return cached;
+
+  const { data } = await supabase.from('categories').select('id, name, slug, parent_id, description, sort_order').eq('active', 1).order('sort_order').order('name');
+  const result = data ?? [];
+  setCache('categories:list', result);
+  return result;
 }
 
 export async function updateCategory(id: string, data: { name?: string; description?: string }) {
@@ -209,11 +257,13 @@ export async function updateCategory(id: string, data: { name?: string; descript
   if (data.description !== undefined) update.description = data.description;
   if (Object.keys(update).length === 0) return getCategory(id);
   await supabase.from('categories').update(update).eq('id', id);
+  invalidateCache('categories');
   return getCategory(id);
 }
 
 export async function deleteCategory(id: string) {
   const { error } = await supabase.from('categories').update({ active: 0 }).eq('id', id);
+  invalidateCache('categories');
   return !error;
 }
 
@@ -281,13 +331,15 @@ export interface ProductResponse {
 }
 
 async function buildProductResponse(p: any): Promise<ProductResponse> {
-  const { data: variants } = await supabase.from('product_variants').select('*').eq('product_id', p.id).eq('active', 1).order('size_ml');
-  const { data: images } = await supabase.from('product_images').select('*').eq('product_id', p.id).order('sort_order');
-  const { data: notes } = await supabase.from('product_notes').select('*').eq('product_id', p.id);
+  const [variantsResult, imagesResult, notesResult] = await Promise.all([
+    supabase.from('product_variants').select('id, product_id, size_ml, price, promotional_price, stock, sku').eq('product_id', p.id).eq('active', 1).order('size_ml'),
+    supabase.from('product_images').select('id, product_id, url, is_main, sort_order').eq('product_id', p.id).order('sort_order'),
+    supabase.from('product_notes').select('type, name').eq('product_id', p.id),
+  ]);
 
-  const vars = variants ?? [];
-  const imgs = images ?? [];
-  const noteRows = notes ?? [];
+  const vars = variantsResult.data ?? [];
+  const imgs = imagesResult.data ?? [];
+  const noteRows = notesResult.data ?? [];
 
   const totalStock = vars.reduce((sum: number, v: any) => sum + (v.stock ?? 0), 0);
   const minPrice = vars.length > 0 ? Math.min(...vars.map((v: any) => v.price)) : 0;
@@ -318,20 +370,23 @@ async function buildProductResponse(p: any): Promise<ProductResponse> {
 }
 
 export async function getProduct(idOrSlug: string): Promise<ProductResponse | undefined> {
-  const { data: p } = await supabase
-    .from('products')
-    .select('*')
-    .or(`id.eq.${idOrSlug},slug.eq.${idOrSlug}`)
-    .single();
+  // Tenta buscar por slug e id em paralelo (reduz de 2 queries sequenciais para 1 roundtrip)
+  const [slugResult, idResult] = await Promise.all([
+    supabase.from('products').select('*').eq('slug', idOrSlug).eq('active', 1).maybeSingle(),
+    supabase.from('products').select('*').eq('id', idOrSlug).eq('active', 1).maybeSingle(),
+  ]);
 
+  const p = slugResult.data ?? idResult.data;
   if (!p) return undefined;
 
-  const { data: brand } = p.brand_id
-    ? await supabase.from('brands').select('name, slug, logo_url').eq('id', p.brand_id).single()
-    : { data: null };
-  const { data: cat } = p.category_id
-    ? await supabase.from('categories').select('name, slug').eq('id', p.category_id).single()
-    : { data: null };
+  // Usar cache de brands/categories ao invés de queries individuais
+  const [brands, categories] = await Promise.all([
+    listBrands(),
+    listCategories(),
+  ]);
+
+  const brand = p.brand_id ? brands.find((b: any) => b.id === p.brand_id) : null;
+  const cat = p.category_id ? categories.find((c: any) => c.id === p.category_id) : null;
 
   const enriched: any = {
     ...p,
@@ -352,48 +407,83 @@ function groupNotes(notes: { type: string; name: string }[]) {
   return grouped;
 }
 
-export async function listProducts(options?: { featuredOnly?: boolean; categoryId?: string; brandId?: string }) {
-  let query = supabase.from('products').select('*').eq('active', 1);
+const LIST_COLUMNS = 'id, name, slug, brand_id, category_id, family, concentration, gender, occasion, featured, promotional_price, view_count, created_at';
+const VARIANT_COLUMNS = 'product_id, size_ml, price, promotional_price, stock';
+
+export async function listProducts(options?: { featuredOnly?: boolean; categoryId?: string; brandId?: string; search?: string; page?: number; limit?: number }) {
+  let query = supabase.from('products').select(LIST_COLUMNS).eq('active', 1);
 
   if (options?.featuredOnly) query = query.eq('featured', 1);
   if (options?.categoryId) query = query.eq('category_id', options.categoryId);
   if (options?.brandId) query = query.eq('brand_id', options.brandId);
+  if (options?.search) {
+    const term = `%${options.search}%`;
+    query = query.or(`name.ilike.${term},slug.ilike.${term}`);
+  }
 
   query = query.order('created_at', { ascending: false });
+
+  const page = options?.page ?? 1;
+  const limit = options?.limit ?? 100;
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+  query = query.range(from, to);
+
   const { data: rows } = await query;
-  if (!rows) return [];
+  if (!rows || rows.length === 0) return [];
 
-  const results: any[] = [];
-  for (const row of rows) {
-    const { data: brand } = row.brand_id ? await supabase.from('brands').select('name, slug').eq('id', row.brand_id).single() : { data: null };
-    const { data: cat } = row.category_id ? await supabase.from('categories').select('name, slug').eq('id', row.category_id).single() : { data: null };
-    const { data: variants } = await supabase.from('product_variants').select('*').eq('product_id', row.id).eq('active', 1).order('size_ml');
-    const { data: images } = await supabase.from('product_images').select('url').eq('product_id', row.id).order('sort_order');
+  const productIds = rows.map((r: any) => r.id);
+  const brandIds = [...new Set(rows.map((r: any) => r.brand_id).filter(Boolean))];
+  const categoryIds = [...new Set(rows.map((r: any) => r.category_id).filter(Boolean))];
 
-    const vars = variants ?? [];
+  // Usar cache para brands e categories ao invés de queries separadas
+  const [allBrands, allCategories, variantsResult, imagesResult] = await Promise.all([
+    listBrands(),
+    listCategories(),
+    supabase.from('product_variants').select(VARIANT_COLUMNS).in('product_id', productIds).eq('active', 1).order('size_ml'),
+    supabase.from('product_images').select('product_id, url').in('product_id', productIds).eq('is_main', 1),
+  ]);
+
+  const brandMap = new Map<string, any>(allBrands.map((b: any) => [b.id, b]));
+  const catMap = new Map<string, any>(allCategories.map((c: any) => [c.id, c]));
+
+  const variantsByProduct = new Map<string, any[]>();
+  for (const v of variantsResult.data ?? []) {
+    const list = variantsByProduct.get(v.product_id) ?? [];
+    list.push(v);
+    variantsByProduct.set(v.product_id, list);
+  }
+
+  const mainImageByProduct = new Map<string, string>();
+  for (const i of imagesResult.data ?? []) {
+    if (!mainImageByProduct.has(i.product_id)) mainImageByProduct.set(i.product_id, i.url);
+  }
+
+  return rows.map((row: any) => {
+    const brand = row.brand_id ? brandMap.get(row.brand_id) ?? null : null;
+    const cat = row.category_id ? catMap.get(row.category_id) ?? null : null;
+    const vars = variantsByProduct.get(row.id) ?? [];
+
     const totalStock = vars.reduce((sum: number, v: any) => sum + (v.stock ?? 0), 0);
     const minPrice = vars.length > 0 ? Math.min(...vars.map((v: any) => v.price)) : 0;
-    const minPromo = vars.length > 0
-      ? Math.min(...vars.filter((v: any) => v.promotional_price != null).map((v: any) => v.promotional_price))
-      : null;
+    const promoPrices = vars.filter((v: any) => v.promotional_price != null).map((v: any) => v.promotional_price);
+    const minPromo = promoPrices.length > 0 ? Math.min(...promoPrices) : null;
 
-    results.push({
+    return {
       id: row.id, name: row.name, slug: row.slug,
       brandId: row.brand_id, categoryId: row.category_id,
-      description: row.description, shortDescription: row.short_description,
       family: row.family, concentration: row.concentration,
-      gender: row.gender, occasion: row.occasion, longevity: row.longevity, projection: row.projection,
-      featured: row.featured, active: row.active,
+      gender: row.gender, occasion: row.occasion,
+      featured: row.featured,
       promotionalPrice: minPromo, viewCount: row.view_count,
       created_at: row.created_at,
       brand: brand?.name ?? null, brandSlug: brand?.slug ?? null,
       category: cat?.name ?? null, categorySlug: cat?.slug ?? null,
       price: minPrice, stock: totalStock,
       variants: vars.map((v: any) => ({ sizeMl: v.size_ml, price: v.price, promotionalPrice: v.promotional_price, stock: v.stock })),
-      images: (images ?? []).map((i: any) => i.url),
-    });
-  }
-  return results;
+      images: mainImageByProduct.has(row.id) ? [mainImageByProduct.get(row.id)!] : [],
+    };
+  });
 }
 
 export async function createProduct(data: ProductInput): Promise<ProductResponse | undefined> {
@@ -445,17 +535,18 @@ export async function createProduct(data: ProductInput): Promise<ProductResponse
 }
 
 export async function updateProduct(id: string, data: ProductInput): Promise<ProductResponse | undefined> {
-  const existing = await getProduct(id);
+  // Buscar apenas os dados básicos do produto (1 query leve em vez de getProduct com 5-6 queries)
+  const { data: existing } = await supabase.from('products').select('*').eq('id', id).maybeSingle();
   if (!existing) return undefined;
 
   const slug = data.name ? slugify(data.name) : existing.slug;
   const { error } = await supabase.from('products').update({
-    brand_id: data.brandId ?? existing.brandId ?? null,
-    category_id: data.categoryId ?? existing.categoryId ?? null,
+    brand_id: data.brandId ?? existing.brand_id ?? null,
+    category_id: data.categoryId ?? existing.category_id ?? null,
     name: data.name ?? existing.name, slug,
     sku: data.sku ?? existing.sku ?? null, barcode: data.barcode ?? existing.barcode ?? null,
     description: data.description ?? existing.description ?? null,
-    short_description: data.shortDescription ?? existing.shortDescription ?? null,
+    short_description: data.shortDescription ?? existing.short_description ?? null,
     family: data.family ?? existing.family ?? null,
     concentration: data.concentration ?? existing.concentration ?? null,
     gender: data.gender ?? existing.gender ?? null, country: data.country ?? existing.country ?? null,
@@ -463,41 +554,55 @@ export async function updateProduct(id: string, data: ProductInput): Promise<Pro
     longevity: data.longevity ?? existing.longevity ?? null,
     projection: data.projection ?? existing.projection ?? null,
     featured: data.featured !== undefined ? (data.featured ? 1 : 0) : existing.featured ? 1 : 0,
-    promotional_price: data.promotionalPrice ?? existing.promotionalPrice ?? null,
-    promotion_start: data.promotionStart ?? existing.promotionStart ?? null,
-    promotion_end: data.promotionEnd ?? existing.promotionEnd ?? null,
+    promotional_price: data.promotionalPrice ?? existing.promotional_price ?? null,
+    promotion_start: data.promotionStart ?? existing.promotion_start ?? null,
+    promotion_end: data.promotionEnd ?? existing.promotion_end ?? null,
     updated_at: new Date().toISOString(),
   }).eq('id', id);
 
   if (error) throw new Error(error.message);
 
+  // Executar deletes + inserts em paralelo quando possível
+  const parallelOps: Promise<any>[] = [];
+
   if (data.variants) {
-    await supabase.from('product_variants').delete().eq('product_id', id);
-    await supabase.from('product_variants').insert(
-      data.variants.map(v => ({
-        product_id: id, size_ml: v.sizeMl, price: v.price,
-        promotional_price: v.promotionalPrice ?? null, stock: v.stock, sku: v.sku ?? null,
-      }))
+    parallelOps.push(
+      supabase.from('product_variants').delete().eq('product_id', id).then(() =>
+        supabase.from('product_variants').insert(
+          data.variants!.map(v => ({
+            product_id: id, size_ml: v.sizeMl, price: v.price,
+            promotional_price: v.promotionalPrice ?? null, stock: v.stock, sku: v.sku ?? null,
+          }))
+        )
+      )
     );
   }
 
   if (data.images) {
-    await supabase.from('product_images').delete().eq('product_id', id);
-    await supabase.from('product_images').insert(
-      data.images.map((img, i) => ({
-        product_id: id, url: img.url, sort_order: i, is_main: img.isMain ? 1 : (i === 0 ? 1 : 0),
-      }))
+    parallelOps.push(
+      supabase.from('product_images').delete().eq('product_id', id).then(() =>
+        supabase.from('product_images').insert(
+          data.images!.map((img, i) => ({
+            product_id: id, url: img.url, sort_order: i, is_main: img.isMain ? 1 : (i === 0 ? 1 : 0),
+          }))
+        )
+      )
     );
   }
 
   if (data.notes) {
-    await supabase.from('product_notes').delete().eq('product_id', id);
-    await supabase.from('product_notes').insert(
-      data.notes.map(n => ({ product_id: id, type: n.type, name: n.name }))
+    parallelOps.push(
+      supabase.from('product_notes').delete().eq('product_id', id).then(() =>
+        supabase.from('product_notes').insert(
+          data.notes!.map(n => ({ product_id: id, type: n.type, name: n.name }))
+        )
+      )
     );
   }
 
-  await logAudit(null, 'UPDATE', 'product', id);
+  parallelOps.push(logAudit(null, 'UPDATE', 'product', id));
+  await Promise.all(parallelOps);
+
   return getProduct(id);
 }
 
@@ -507,31 +612,57 @@ export async function deleteProduct(id: string) {
 }
 
 export async function incrementViewCount(productId: string, ip?: string) {
-  // Increment view_count
-  const { data: p } = await supabase.from('products').select('view_count').eq('id', productId).single();
-  if (p) {
-    await supabase.from('products').update({ view_count: (p.view_count ?? 0) + 1 }).eq('id', productId);
-  }
-  await supabase.from('product_views').insert({ product_id: productId, ip: ip ?? null });
+  // Executar incremento e registro de view em paralelo
+  await Promise.all([
+    // Tenta RPC atômica primeiro; fallback para read+write se RPC não existir
+    supabase.rpc('increment_view_count', { p_product_id: productId }).then(({ error }) => {
+      if (error) {
+        // Fallback: leitura + escrita (menos eficiente, mas funcional)
+        return supabase.from('products').select('view_count').eq('id', productId).single()
+          .then(({ data: p }) => {
+            if (p) {
+              return supabase.from('products')
+                .update({ view_count: (p.view_count ?? 0) + 1 })
+                .eq('id', productId);
+            }
+          });
+      }
+    }),
+    supabase.from('product_views').insert({ product_id: productId, ip: ip ?? null }),
+  ]);
 }
 
 export async function getMostViewed(limit = 10) {
   const { data: rows } = await supabase
     .from('products')
-    .select('*')
+    .select(LIST_COLUMNS)
     .eq('active', 1)
     .order('view_count', { ascending: false })
     .limit(limit);
 
-  if (!rows) return [];
+  if (!rows || rows.length === 0) return [];
 
-  const results = [];
-  for (const row of rows) {
-    const { data: brand } = row.brand_id ? await supabase.from('brands').select('name').eq('id', row.brand_id).single() : { data: null };
-    const { data: images } = await supabase.from('product_images').select('url').eq('product_id', row.id).order('sort_order').limit(1);
-    results.push({ ...row, brand: brand?.name ?? null, images: (images ?? []).map((i: any) => i.url) });
+  const productIds = rows.map((r: any) => r.id);
+
+  // Usar cache de brands ao invés de query separada
+  const [allBrands, imagesResult] = await Promise.all([
+    listBrands(),
+    supabase.from('product_images').select('product_id, url').in('product_id', productIds).order('sort_order'),
+  ]);
+
+  const brandMap = new Map<string, any>(allBrands.map((b: any) => [b.id, b]));
+  const imagesByProduct = new Map<string, string[]>();
+  for (const i of imagesResult.data ?? []) {
+    const list = imagesByProduct.get(i.product_id) ?? [];
+    if (list.length === 0) list.push(i.url);
+    imagesByProduct.set(i.product_id, list);
   }
-  return results;
+
+  return rows.map((row: any) => ({
+    ...row,
+    brand: row.brand_id ? brandMap.get(row.brand_id)?.name ?? null : null,
+    images: imagesByProduct.get(row.id) ?? [],
+  }));
 }
 
 // ─── Backup ───────────────────────────────────────────────────────────────────
@@ -550,38 +681,40 @@ export async function getBackupInfo() {
 
 // ─── Dashboard Stats ──────────────────────────────────────────────────────────
 export async function getDashboardStats() {
-  const { count: totalProducts } = await supabase.from('products').select('*', { count: 'exact', head: true }).eq('active', 1);
+  const [mostViewedResult, countResult, variantsResult, promoResult] = await Promise.all([
+    getMostViewed(5),
+    supabase.from('products').select('*', { count: 'exact', head: true }).eq('active', 1),
+    supabase.from('product_variants').select('product_id, stock').eq('active', 1),
+    supabase.from('products').select('id', { count: 'exact', head: true }).eq('active', 1).not('promotional_price', 'is', null),
+  ]);
 
-  const { data: allProducts } = await supabase.from('products').select('id').eq('active', 1);
-  const { data: allVariants } = await supabase.from('product_variants').select('product_id, stock');
-  const { data: promoProducts } = await supabase.from('products').select('id').eq('active', 1).not('promotional_price', 'is', null);
+  const totalProducts = countResult.count ?? 0;
+  const allVariants = variantsResult.data ?? [];
+  const totalProductsOnPromotion = promoResult.count ?? 0;
 
   let outOfStock = 0;
   let lowStock = 0;
   let totalStock = 0;
   const productStocks: Record<string, number> = {};
 
-  for (const v of allVariants ?? []) {
+  for (const v of allVariants) {
     productStocks[v.product_id] = (productStocks[v.product_id] ?? 0) + (v.stock ?? 0);
     totalStock += v.stock ?? 0;
   }
 
-  for (const p of allProducts ?? []) {
-    const stock = productStocks[p.id] ?? 0;
+  for (const stock of Object.values(productStocks)) {
     if (stock === 0) outOfStock++;
     else if (stock <= 5) lowStock++;
   }
 
-  const mostViewed = await getMostViewed(5);
-
   return {
-    totalProducts: totalProducts ?? 0,
-    activeProducts: totalProducts ?? 0,
+    totalProducts,
+    activeProducts: totalProducts,
     outOfStock,
     lowStock,
     totalStock,
-    productsOnPromotion: promoProducts?.length ?? 0,
-    mostViewed,
+    productsOnPromotion: totalProductsOnPromotion,
+    mostViewed: mostViewedResult,
   };
 }
 

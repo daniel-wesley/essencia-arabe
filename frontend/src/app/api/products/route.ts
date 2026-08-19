@@ -16,9 +16,16 @@ async function requireAuth(request: Request, allowedRoles: string[] = ['admin', 
   return { authorized: true, user: session };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const products = await listProducts();
+    const { searchParams } = new URL(request.url);
+    const featuredOnly = searchParams.get('featured') === '1' || searchParams.get('featured') === 'true';
+    const categoryId = searchParams.get('categoryId') ?? undefined;
+    const brandId = searchParams.get('brandId') ?? undefined;
+    const search = searchParams.get('search') ?? undefined;
+    const page = searchParams.get('page') ? Number(searchParams.get('page')) : undefined;
+    const limit = searchParams.get('limit') ? Number(searchParams.get('limit')) : undefined;
+    const products = await listProducts({ featuredOnly, categoryId, brandId, search, page, limit });
     return NextResponse.json(products);
   } catch (err) {
     console.error('GET /api/products error:', err);

@@ -307,36 +307,43 @@ function ProductsTab({ userRole }: { userRole: string }) {
 
   const resetForm = () => { setForm(emptyForm); setEditing(null); setShowForm(false); };
 
-  const handleEdit = (p: Product) => {
-    setForm({
-      name: p.name,
-      brandId: p.brandId ?? '',
-      categoryId: p.categoryId ?? '',
-      family: p.family ?? 'Oriental',
-      concentration: p.concentration ?? 'EdP',
-      gender: p.gender ?? 'M',
-      description: p.description ?? '',
-      shortDescription: p.shortDescription ?? '',
-      occasion: p.occasion ?? '',
-      longevity: p.longevity ?? '',
-      projection: p.projection ?? '',
-      featured: !!p.featured,
-      promotionalPrice: p.promotionalPrice?.toString() ?? '',
-      promotionStart: '',
-      promotionEnd: '',
-      variants: (p.variants ?? []).map(v => ({
-        sizeMl: String(v.sizeMl), price: String(v.price),
-        promotionalPrice: v.promotionalPrice?.toString() ?? '', stock: String(v.stock),
-      })),
-      images: p.images ?? [],
-      notes: {
-        top: p.notes?.top?.length ? p.notes.top : [''],
-        heart: p.notes?.heart?.length ? p.notes.heart : [''],
-        base: p.notes?.base?.length ? p.notes.base : [''],
-      },
-    });
-    setEditing(p);
-    setShowForm(true);
+  const handleEdit = async (p: Product) => {
+    try {
+      const res = await fetch(`/api/products/${p.id}`);
+      if (!res.ok) { alert('Erro ao carregar dados do produto.'); return; }
+      const full: Product = await res.json();
+      setForm({
+        name: full.name,
+        brandId: full.brandId ?? '',
+        categoryId: full.categoryId ?? '',
+        family: full.family ?? 'Oriental',
+        concentration: full.concentration ?? 'EdP',
+        gender: full.gender ?? 'M',
+        description: full.description ?? '',
+        shortDescription: full.shortDescription ?? '',
+        occasion: full.occasion ?? '',
+        longevity: full.longevity ?? '',
+        projection: full.projection ?? '',
+        featured: !!full.featured,
+        promotionalPrice: full.promotionalPrice?.toString() ?? '',
+        promotionStart: '',
+        promotionEnd: '',
+        variants: (full.variants ?? []).map(v => ({
+          sizeMl: String(v.sizeMl), price: String(v.price),
+          promotionalPrice: v.promotionalPrice?.toString() ?? '', stock: String(v.stock),
+        })),
+        images: full.images ?? [],
+        notes: {
+          top: full.notes?.top?.length ? full.notes.top : [''],
+          heart: full.notes?.heart?.length ? full.notes.heart : [''],
+          base: full.notes?.base?.length ? full.notes.base : [''],
+        },
+      });
+      setEditing(full);
+      setShowForm(true);
+    } catch {
+      alert('Erro ao carregar dados do produto.');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

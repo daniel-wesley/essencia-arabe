@@ -18,9 +18,8 @@ export async function GET(request: Request, { params }: Params) {
       return NextResponse.json({ error: 'Produto não encontrado.' }, { status: 404 });
     }
 
-    // Increment view count
     const ip = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? 'unknown';
-    await incrementViewCount(product.id as string, ip);
+    incrementViewCount(product.id as string, ip).catch(() => {});
 
     return NextResponse.json(product);
   } catch (err) {
