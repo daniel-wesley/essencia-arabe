@@ -1,0 +1,29 @@
+{
+  "name": "essencia-arabe-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "tunnel": "npx localtunnel --port 3000"
+  },
+  "dependencies": {
+    "autoprefixer": "^10.4.0",
+    "axios": "^1.4.0",
+    "lucide-react": "^0.263.0",
+    "next": "^16.3.1",
+    "postcss": "^8.4.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tailwindcss": "^3.3.0",
+    "zustand": "^4.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.1.0"
+  }
+}
