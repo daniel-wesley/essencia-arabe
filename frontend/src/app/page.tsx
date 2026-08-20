@@ -54,7 +54,7 @@ export default function HomePage() {
           position: 'absolute', inset: 0,
           background: 'radial-gradient(ellipse at 30% 50%, rgba(200, 168, 78, 0.08), transparent 60%)',
         }} />
-        <div style={{ position: 'relative', textAlign: 'center', padding: '4rem 2rem', maxWidth: 800 }}>
+        <div style={{ position: 'relative', textAlign: 'center', padding: 'clamp(2rem, 5vw, 4rem) clamp(1rem, 3vw, 2rem)', maxWidth: 800 }}>
           <div style={{
             display: 'inline-block', padding: '6px 16px', borderRadius: 20,
             border: '1px solid rgba(200, 168, 78, 0.25)', fontSize: '0.75rem',
@@ -95,12 +95,12 @@ export default function HomePage() {
       </section>
 
       {/* CATEGORIAS POR GÊNERO */}
-      <section style={{ padding: '5rem 2rem', maxWidth: 1200, margin: '0 auto' }}>
+      <section style={{ padding: 'clamp(3rem, 5vw, 5rem) clamp(1rem, 3vw, 2rem)', maxWidth: 1200, margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: 48 }}>
           <div style={{ fontSize: '0.7rem', color: '#d4b86a', letterSpacing: 3, textTransform: 'uppercase' as const, marginBottom: 8 }}>Coleções</div>
-          <h2 style={{ fontSize: '2rem', fontWeight: 800, color: '#faf5eb' }}>Explore por Estilo</h2>
+          <h2 style={{ fontSize: 'clamp(1.5rem, 4vw, 2rem)', fontWeight: 800, color: '#faf5eb' }}>Explore por Estilo</h2>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 250px), 1fr))', gap: 24 }}>
           {[
             { name: 'Masculinos', slug: 'masculino', desc: 'Fragrâncias intensas e marcantes', icon: '🕌' },
             { name: 'Femininos', slug: 'feminino', desc: 'Elegância e sofisticação', icon: '🌙' },
@@ -121,7 +121,7 @@ export default function HomePage() {
 
       {/* DESTAQUES */}
       {featuredProducts.length > 0 && (
-        <section style={{ padding: '5rem 2rem', background: 'rgba(24, 24, 27, 0.3)' }}>
+        <section style={{ padding: 'clamp(3rem, 5vw, 5rem) clamp(1rem, 3vw, 2rem)', background: 'rgba(24, 24, 27, 0.3)' }}>
           <div style={{ maxWidth: 1200, margin: '0 auto' }}>
             <div style={{ textAlign: 'center', marginBottom: 48 }}>
               <div style={{ fontSize: '0.7rem', color: '#d4b86a', letterSpacing: 3, textTransform: 'uppercase' as const, marginBottom: 8 }}>Selecionados</div>
@@ -166,10 +166,10 @@ export default function HomePage() {
 
       {/* MARCAS */}
       {brands.length > 0 && (
-        <section style={{ padding: '5rem 2rem', maxWidth: 1200, margin: '0 auto' }}>
+        <section style={{ padding: 'clamp(3rem, 5vw, 5rem) clamp(1rem, 3vw, 2rem)', maxWidth: 1200, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 48 }}>
             <div style={{ fontSize: '0.7rem', color: '#d4b86a', letterSpacing: 3, textTransform: 'uppercase' as const, marginBottom: 8 }}>Parceiros</div>
-            <h2 style={{ fontSize: '2rem', fontWeight: 800, color: '#faf5eb' }}>Nossas Marcas</h2>
+            <h2 style={{ fontSize: 'clamp(1.5rem, 4vw, 2rem)', fontWeight: 800, color: '#faf5eb' }}>Nossas Marcas</h2>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 24, justifyContent: 'center' }}>
             {brands.map(b => (
@@ -186,7 +186,7 @@ export default function HomePage() {
       )}
 
       {/* SOBRE */}
-      <section style={{ padding: '5rem 2rem', background: 'rgba(24, 24, 27, 0.3)' }}>
+      <section style={{ padding: 'clamp(3rem, 5vw, 5rem) clamp(1rem, 3vw, 2rem)', background: 'rgba(24, 24, 27, 0.3)' }}>
         <div style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
           <div style={{ fontSize: '0.7rem', color: '#d4b86a', letterSpacing: 3, textTransform: 'uppercase' as const, marginBottom: 16 }}>Sobre Nós</div>
           <h2 style={{ fontSize: '2rem', fontWeight: 800, color: '#faf5eb', marginBottom: 16 }}>Essência Árabe</h2>

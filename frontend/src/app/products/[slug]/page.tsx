@@ -85,7 +85,7 @@ export default function ProductDetailPage() {
   );
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '2rem' }}>
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: 'clamp(1rem, 3vw, 2rem)' }}>
       {/* Breadcrumb */}
       <div style={{ marginBottom: 24, fontSize: '0.8rem', color: '#a1a1aa' }}>
         <a href="/" style={{ color: '#d4b86a', textDecoration: 'none' }}>Início</a>
@@ -95,7 +95,7 @@ export default function ProductDetailPage() {
         <span style={{ color: '#c8b898' }}>{product.name}</span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 400px), 1fr))', gap: 'clamp(1.5rem, 4vw, 3rem)' }}>
         {/* Imagem */}
         <div style={{
           background: 'linear-gradient(135deg, rgba(200, 168, 78, 0.08), rgba(5, 150, 105, 0.05))',
@@ -129,7 +129,7 @@ export default function ProductDetailPage() {
           <div style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase' as const, color: '#d4b86a', marginBottom: 8 }}>
             {product.brand}
           </div>
-          <h1 style={{ fontSize: '2.2rem', fontWeight: 800, color: '#faf5eb', marginBottom: 8 }}>{product.name}</h1>
+          <h1 style={{ fontSize: 'clamp(1.5rem, 5vw, 2.2rem)', fontWeight: 800, color: '#faf5eb', marginBottom: 8 }}>{product.name}</h1>
           <p style={{ color: '#a1a1aa', marginBottom: 20, fontSize: '0.9rem' }}>
             {product.concentration ?? ''} {product.family ? `· ${product.family}` : ''} {product.gender ? `· ${product.gender === 'M' ? 'Masculino' : product.gender === 'F' ? 'Feminino' : 'Unissex'}` : ''}
           </p>
@@ -150,7 +150,7 @@ export default function ProductDetailPage() {
               <div style={{ fontSize: '0.7rem', fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase' as const, color: '#d4b86a', marginBottom: 12 }}>
                 Notas Olfativas
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 120px), 1fr))', gap: 16 }}>
                 {[
                   { label: 'Topo', notes: product.notes.top, icon: '🌿' },
                   { label: 'Coração', notes: product.notes.heart, icon: '💛' },
@@ -217,10 +217,10 @@ export default function ProductDetailPage() {
             {hasDiscount ? (
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
                 <span style={{ fontSize: '1rem', color: '#c8b898', textDecoration: 'line-through' }}>R$ {selected.price.toFixed(2)}</span>
-                <span style={{ fontSize: '2rem', fontWeight: 800, color: '#ef4444' }}>R$ {selected.promotionalPrice!.toFixed(2)}</span>
+                <span style={{ fontSize: 'clamp(1.2rem, 4vw, 2rem)', fontWeight: 800, color: '#ef4444' }}>R$ {selected.promotionalPrice!.toFixed(2)}</span>
               </div>
             ) : (
-              <div style={{ fontSize: '2rem', fontWeight: 800, color: '#059669' }}>R$ {selected.price.toFixed(2)}</div>
+              <div style={{ fontSize: 'clamp(1.2rem, 4vw, 2rem)', fontWeight: 800, color: '#059669' }}>R$ {selected.price.toFixed(2)}</div>
             )}
           </div>
 

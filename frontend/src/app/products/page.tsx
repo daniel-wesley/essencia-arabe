@@ -87,10 +87,10 @@ function ProductsContent() {
   }, [debouncedSearch, filterCategory, filterBrand]);
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto', padding: '2rem' }}>
+    <div style={{ maxWidth: 1200, margin: '0 auto', padding: 'clamp(1rem, 3vw, 2rem)' }}>
       <div style={{ marginBottom: 32 }}>
-        <h1 style={{ fontSize: '2rem', fontWeight: 800, color: '#faf5eb', marginBottom: 8 }}>Catálogo de Perfumes</h1>
-        <p style={{ color: '#a1a1aa' }}>Explore nossa coleção de perfumes árabes autênticos</p>
+        <h1 style={{ fontSize: 'clamp(1.5rem, 4vw, 2rem)', fontWeight: 800, color: '#faf5eb', marginBottom: 8 }}>Catálogo de Perfumes</h1>
+        <p style={{ color: '#a1a1aa', fontSize: 'clamp(0.85rem, 2vw, 1rem)' }}>Explore nossa coleção de perfumes árabes autênticos</p>
       </div>
 
       {/* Filtros */}
@@ -100,20 +100,20 @@ function ProductsContent() {
           onChange={e => setSearch(e.target.value)}
           placeholder="Buscar por nome ou marca..."
           style={{
-            flex: 1, minWidth: 200, padding: '10px 14px', borderRadius: 10,
+            flex: '1 1 100%', minWidth: 0, padding: '10px 14px', borderRadius: 10,
             border: '1px solid rgba(200,168,78,0.2)', background: 'rgba(10,10,15,0.6)',
             color: '#f5f0e6', fontSize: '0.9rem', outline: 'none',
           }}
         />
         <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} style={{
-          padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(200,168,78,0.2)',
+          flex: '1 1 calc(50% - 6px)', minWidth: 0, padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(200,168,78,0.2)',
           background: 'rgba(10,10,15,0.6)', color: '#f5f0e6', fontSize: '0.9rem',
         }}>
           <option value="">Todas as categorias</option>
           {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         <select value={filterBrand} onChange={e => setFilterBrand(e.target.value)} style={{
-          padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(200,168,78,0.2)',
+          flex: '1 1 calc(50% - 6px)', minWidth: 0, padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(200,168,78,0.2)',
           background: 'rgba(10,10,15,0.6)', color: '#f5f0e6', fontSize: '0.9rem',
         }}>
           <option value="">Todas as marcas</option>
@@ -138,7 +138,7 @@ function ProductsContent() {
           <p>Tente ajustar os filtros.</p>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 24 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 260px), 1fr))', gap: 24 }}>
           {products.map(p => (
             <a key={p.id} href={`/products/${p.slug || p.id}`} style={{
               display: 'block', borderRadius: 16, overflow: 'hidden',
