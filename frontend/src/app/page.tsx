@@ -139,7 +139,7 @@ export default function HomePage() {
                     display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
                   }}>
                     {p.images?.[0] ? (
-                      <img src={p.images[0]} alt={p.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <img src={p.images[0]} alt={p.name} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : <span style={{ fontSize: '4rem' }}>🧴</span>}
                   </div>
                   <div style={{ padding: '1.25rem' }}>

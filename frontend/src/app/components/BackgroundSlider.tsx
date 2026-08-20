@@ -17,6 +17,7 @@ const SLIDE_INTERVAL = 8000;
 export default function BackgroundSlider() {
   const [current, setCurrent] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [loadedIndices, setLoadedIndices] = useState<number[]>([0]);
 
   const next = useCallback(() => {
     setCurrent((prev) => (prev + 1) % SLIDES.length);
@@ -28,6 +29,15 @@ export default function BackgroundSlider() {
     return () => clearInterval(timer);
   }, [next, paused]);
 
+  useEffect(() => {
+    const nextIdx = (current + 1) % SLIDES.length;
+    setLoadedIndices((prev) => {
+      if (prev.includes(current) && prev.includes(nextIdx)) return prev;
+      const nextSet = new Set([...prev, current, nextIdx]);
+      return Array.from(nextSet);
+    });
+  }, [current]);
+
   return (
     <>
       <div className="bg-slider-container">
@@ -35,7 +45,7 @@ export default function BackgroundSlider() {
           <div
             key={src}
             className={`bg-slide${i === current ? ' active' : ''}`}
-            style={{ backgroundImage: `url(${src})` }}
+            style={loadedIndices.includes(i) ? { backgroundImage: `url(${src})` } : {}}
           />
         ))}
       </div>

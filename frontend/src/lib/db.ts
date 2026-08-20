@@ -563,7 +563,7 @@ export async function updateProduct(id: string, data: ProductInput): Promise<Pro
   if (error) throw new Error(error.message);
 
   // Executar deletes + inserts em paralelo quando possível
-  const parallelOps: Promise<any>[] = [];
+  const parallelOps: PromiseLike<any>[] = [];
 
   if (data.variants) {
     parallelOps.push(

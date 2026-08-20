@@ -26,7 +26,9 @@ export async function GET(request: Request) {
     const page = searchParams.get('page') ? Number(searchParams.get('page')) : undefined;
     const limit = searchParams.get('limit') ? Number(searchParams.get('limit')) : undefined;
     const products = await listProducts({ featuredOnly, categoryId, brandId, search, page, limit });
-    return NextResponse.json(products);
+    const response = NextResponse.json(products);
+    response.headers.set('Cache-Control', 'public, max-age=10, s-maxage=10, stale-while-revalidate=50');
+    return response;
   } catch (err) {
     console.error('GET /api/products error:', err);
     return NextResponse.json({ error: 'Erro interno ao listar produtos.' }, { status: 500 });

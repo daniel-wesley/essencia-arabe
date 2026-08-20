@@ -1,6 +1,13 @@
 import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
 import './globals.css';
 import BackgroundSlider from './components/BackgroundSlider';
+
+const inter = Inter({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800'],
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'Essência Árabe | Perfumes Árabes Autênticos',
@@ -24,13 +31,9 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <head>
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
-          rel="stylesheet"
-        />
         <link rel="icon" href="/favicon.ico" />
       </head>
-      <body>
+      <body className={inter.className}>
         <BackgroundSlider />
         <header className="header">
           <a href="/" className="header-logo-link" style={{ flexDirection: 'column', gap: '0.25rem' }}>

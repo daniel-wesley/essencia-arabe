@@ -9,7 +9,10 @@ function getTokenFromRequest(request: Request): string | null {
 
 export async function GET() {
   try {
-    return NextResponse.json(await listCategories());
+    const categories = await listCategories();
+    const response = NextResponse.json(categories);
+    response.headers.set('Cache-Control', 'public, max-age=60, s-maxage=60, stale-while-revalidate=120');
+    return response;
   } catch (err) {
     console.error('GET /api/categories error:', err);
     return NextResponse.json({ error: 'Erro interno.' }, { status: 500 });
