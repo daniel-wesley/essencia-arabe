@@ -572,7 +572,7 @@ export async function updateProduct(id: string, data: ProductInput): Promise<Pro
           data.variants!.map(v => ({
             product_id: id, size_ml: v.sizeMl, price: v.price,
             promotional_price: v.promotionalPrice ?? null, stock: v.stock, sku: v.sku ?? null,
-          }))
+          })) as any
         )
       )
     );
@@ -584,7 +584,7 @@ export async function updateProduct(id: string, data: ProductInput): Promise<Pro
         supabase.from('product_images').insert(
           data.images!.map((img, i) => ({
             product_id: id, url: img.url, sort_order: i, is_main: img.isMain ? 1 : (i === 0 ? 1 : 0),
-          }))
+          })) as any
         )
       )
     );
@@ -594,7 +594,7 @@ export async function updateProduct(id: string, data: ProductInput): Promise<Pro
     parallelOps.push(
       supabase.from('product_notes').delete().eq('product_id', id).then(() =>
         supabase.from('product_notes').insert(
-          data.notes!.map(n => ({ product_id: id, type: n.type, name: n.name }))
+          data.notes!.map(n => ({ product_id: id, type: n.type, name: n.name })) as any
         )
       )
     );
