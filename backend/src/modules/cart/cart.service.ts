@@ -50,17 +50,33 @@ export class CartService {
     return `cart:${userId}:${variantId}`;
   }
 
+  private async scanKeys(pattern: string): Promise<string[]> {
+    const keys: string[] = [];
+    let cursor = '0';
+    do {
+      const [newCursor, foundKeys] = await this.redis.scan(
+        cursor, 'MATCH', pattern, 'COUNT', 100,
+      );
+      cursor = newCursor;
+      keys.push(...foundKeys);
+    } while (cursor !== '0');
+    return keys;
+  }
+
   async addItem(
     userId: string,
     variantId: string,
     quantity: number = 1,
   ): Promise<Cart> {
-    const variant = await this.productsService.getVariantById(variantId);
+    const [variant, available] = await Promise.all([
+      this.productsService.getVariantById(variantId),
+      this.inventoryService.getAvailableStock(variantId),
+    ]);
+
     if (!variant) {
       throw new NotFoundException('Variante de produto não encontrada.');
     }
 
-    const available = await this.inventoryService.getAvailableStock(variantId);
     if (available < quantity) {
       throw new BadRequestException(
         `Estoque insuficiente. Disponível: ${available}`,
@@ -85,13 +101,11 @@ export class CartService {
         JSON.stringify(item),
       );
     } else {
-      const reservation = await this.inventoryService.reserveStock(
-        variantId,
-        quantity,
-        userId,
-      );
+      const [reservation, product] = await Promise.all([
+        this.inventoryService.reserveStock(variantId, quantity, userId),
+        this.productsService.getProductById(variant.productId),
+      ]);
 
-      const product = await this.productsService.getProductById(variant.productId);
       const item: CartItem = {
         variantId,
         productId: variant.productId,
@@ -177,15 +191,16 @@ export class CartService {
 
   async getCart(userId: string): Promise<Cart> {
     const pattern = `cart:${userId}:*`;
-    const keys = await this.redis.keys(pattern);
+    const keys = await this.scanKeys(pattern);
 
-    const items: CartItem[] = [];
-    for (const key of keys) {
-      const itemData = await this.redis.get(key);
-      if (itemData) {
-        items.push(JSON.parse(itemData));
-      }
+    if (keys.length === 0) {
+      return { items: [], subtotal: 0, itemCount: 0, updatedAt: new Date().toISOString() };
     }
+
+    const values = await this.redis.mget(...keys);
+    const items = values
+      .filter((v): v is string => v !== null)
+      .map(v => JSON.parse(v));
 
     const subtotal = items.reduce(
       (sum, item) => sum + item.unitPrice * item.quantity,
@@ -202,20 +217,26 @@ export class CartService {
 
   async clearCart(userId: string): Promise<void> {
     const pattern = `cart:${userId}:*`;
-    const keys = await this.redis.keys(pattern);
+    const keys = await this.scanKeys(pattern);
 
-    for (const key of keys) {
-      const itemData = await this.redis.get(key);
-      if (itemData) {
-        const item: CartItem = JSON.parse(itemData);
-        await this.inventoryService.releaseReservation(
-          item.variantId,
-          item.quantity,
-          userId,
-        );
-      }
-      await this.redis.del(key);
-    }
+    if (keys.length === 0) return;
+
+    const reservationData = await Promise.all(
+      keys.map(async (key) => {
+        const data = await this.redis.get(key);
+        return data ? JSON.parse(data) : null;
+      }),
+    );
+
+    await Promise.all(
+      reservationData
+        .filter((r): r is CartItem => r !== null)
+        .map(r => this.inventoryService.releaseReservation(r.variantId, r.quantity, userId)),
+    );
+
+    const pipeline = this.redis.pipeline();
+    keys.forEach(key => pipeline.del(key));
+    await pipeline.exec();
   }
 
   async getCartItemCount(userId: string): Promise<number> {

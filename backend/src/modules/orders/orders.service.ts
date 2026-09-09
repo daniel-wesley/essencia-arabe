@@ -81,9 +81,9 @@ export class OrdersService {
       });
       await manager.save(order);
 
-      // Criar itens do pedido
-      for (const item of cart.items) {
-        const orderItem = manager.create(OrderItem, {
+      // Criar itens do pedido em batch (1 query só)
+      const orderItems = cart.items.map(item =>
+        manager.create(OrderItem, {
           orderId: order.id,
           variantId: item.variantId,
           productName: item.productName,
@@ -92,16 +92,20 @@ export class OrdersService {
           unitPrice: item.unitPrice,
           quantity: item.quantity,
           totalPrice: item.unitPrice * item.quantity,
-        });
-        await manager.save(orderItem);
+        }),
+      );
+      await manager.insert(OrderItem, orderItems);
 
-        // Confirmar reserva de estoque (decrementar estoque real)
-        await this.inventoryService.confirmReservation(
-          item.variantId,
-          item.quantity,
-          dto.userId,
-        );
-      }
+      // Confirmar reservas em paralelo
+      await Promise.all(
+        cart.items.map(item =>
+          this.inventoryService.confirmReservation(
+            item.variantId,
+            item.quantity,
+            dto.userId,
+          ),
+        ),
+      );
 
       // Atualizar uso do cupom
       if (couponId) {
@@ -206,14 +210,16 @@ export class OrdersService {
       );
     }
 
-    // Liberar estoque
-    for (const item of order.items) {
-      await this.inventoryService.releaseReservation(
-        item.variantId,
-        item.quantity,
-        userId,
-      );
-    }
+    // Liberar estoque em paralelo
+    await Promise.all(
+      order.items.map(item =>
+        this.inventoryService.releaseReservation(
+          item.variantId,
+          item.quantity,
+          userId,
+        ),
+      ),
+    );
 
     // Estornar pontos de fidelidade
     if (order.loyaltyPointsUsed > 0) {

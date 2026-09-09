@@ -38,6 +38,17 @@ export class SearchService {
     // Buscar produtos com full-text search
     const [products, total] = await this.productRepo
       .createQueryBuilder('p')
+      .select([
+        'p.id',
+        'p.name',
+        'p.slug',
+        'p.concentration',
+        'p.gender',
+        'p.olfactoryFamily',
+        'p.mainImageUrl',
+        'p.ratingAvg',
+        'p.ratingCount',
+      ])
       .leftJoinAndSelect('p.brand', 'brand')
       .leftJoinAndSelect('p.variants', 'variants')
       .where('p.isActive = true')

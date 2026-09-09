@@ -213,26 +213,42 @@ export class InventoryService {
     this.logger.debug('Verificando reservas expiradas...');
 
     const pattern = 'reservation:ttl:*:*';
-    const keys = await this.redis.keys(pattern);
+    const keys: string[] = [];
+    let cursor = '0';
 
-    for (const key of keys) {
-      const ttl = await this.redis.ttl(key);
-      if (ttl <= 0) {
-        // Reserva expirou, liberar estoque
-        const parts = key.split(':');
-        const userId = parts[2];
-        const variantId = parts[3];
+    do {
+      const [newCursor, foundKeys] = await this.redis.scan(
+        cursor, 'MATCH', pattern, 'COUNT', 100,
+      );
+      cursor = newCursor;
+      keys.push(...foundKeys);
+    } while (cursor !== '0');
 
-        const reservationKey = `reservation:${userId}:${variantId}`;
-        const reservationData = await this.redis.get(reservationKey);
+    if (keys.length === 0) return;
 
-        if (reservationData) {
-          const { quantity } = JSON.parse(reservationData);
-          await this.releaseReservation(variantId, quantity, userId);
-          this.logger.log(
-            `Reserva expirada liberada: ${quantity}x variante ${variantId}`,
-          );
-        }
+    const pipeline = this.redis.pipeline();
+    keys.forEach(key => pipeline.ttl(key));
+    const results = await pipeline.exec();
+
+    const expiredKeys = keys.filter((_, index) => {
+      const ttl = results?.[index]?.[1] as number;
+      return ttl === -2;
+    });
+
+    for (const key of expiredKeys) {
+      const parts = key.split(':');
+      const userId = parts[2];
+      const variantId = parts[3];
+
+      const reservationKey = `reservation:${userId}:${variantId}`;
+      const reservationData = await this.redis.get(reservationKey);
+
+      if (reservationData) {
+        const { quantity } = JSON.parse(reservationData);
+        await this.releaseReservation(variantId, quantity, userId);
+        this.logger.log(
+          `Reserva expirada liberada: ${quantity}x variante ${variantId}`,
+        );
       }
     }
   }

@@ -10,6 +10,7 @@
     "tunnel": "npx localtunnel --port 3000"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.6",
     "@supabase/supabase-js": "^2.112.3",
     "@types/pg": "^8.23.1",
     "autoprefixer": "^10.4.0",

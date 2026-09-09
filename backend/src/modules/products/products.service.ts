@@ -151,6 +151,19 @@ export class ProductsService {
   ): SelectQueryBuilder<Product> {
     const query = this.productRepo
       .createQueryBuilder('p')
+      .select([
+        'p.id',
+        'p.name',
+        'p.slug',
+        'p.concentration',
+        'p.gender',
+        'p.olfactoryFamily',
+        'p.intensity',
+        'p.mainImageUrl',
+        'p.ratingAvg',
+        'p.ratingCount',
+        'p.createdAt',
+      ])
       .leftJoinAndSelect('p.brand', 'brand')
       .leftJoinAndSelect('p.category', 'category')
       .leftJoinAndSelect('p.variants', 'variants')
